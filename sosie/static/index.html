@@ -141,6 +141,17 @@ body.recording #bar { background: var(--red); box-shadow: 0 0 12px var(--red); }
 .trow button.sq { width: 26px; padding: 3px 0; font-weight: 700; }
 .mono { font-family: var(--mono); font-size: 12px; min-width: 128px; text-align: center; }
 .mono b { color: var(--teal); }
+.mono.short { min-width: 92px; }
+.pace { display: none; gap: 6px; align-items: center; }
+.pace.on { display: flex; }
+.shot .acts { margin-left: auto; display: none; gap: 4px; }
+.shot.cur .acts { display: flex; }
+.shot .acts button, .curacts button { font-size: 12px; padding: 1px 9px; }
+.curacts { display: flex; justify-content: flex-end; gap: 4px; max-width: 1200px; margin: 0 auto 4px; }
+.editor { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.editor textarea { font-size: 24px; line-height: 1.45; background: var(--bg); resize: none; overflow: hidden; }
+.editor .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.shot.newline { opacity: 1; border-left-color: var(--amber); background: var(--panel); }
 .take .th .kind { font-size: 11px; color: var(--muted); }
 .take.synth { border-style: dashed; }
 .take .th .star { cursor: pointer; }
@@ -295,7 +306,7 @@ details[open] > summary { margin-bottom: 8px; }
     <section id="stage">
       <div id="recbadge">● REC <span id="rectime">0:00.0</span></div>
       <div id="script"></div>
-      <div id="filmbox"><video id="film" preload="auto" playsinline muted></video><span id="filmtc"></span></div>
+      <div id="filmbox"><video id="film" preload="auto" playsinline muted controls></video><span id="filmtc"></span></div>
       <div id="rythmo"><div id="strip"></div><div id="bar"></div><div id="count"></div></div>
       <div id="curtext"></div>
     </section>
@@ -320,10 +331,14 @@ details[open] > summary { margin-bottom: 8px; }
       <div class="trow" data-i18n-title="tl.synth.t"><span class="tl" data-i18n="tl.synth"></span>
         <select id="t-voice"></select><button id="b-gen"><span data-i18n="tl.gen"></span><kbd>S</kbd></button></div>
       <div class="trow" data-i18n-title="tl.band.t"><span class="tl" data-i18n="tl.band"></span>
-        <select id="t-src"></select><button id="b-guide"><span data-i18n="tl.listen"></span><kbd>G</kbd></button></div>
+        <select id="t-src"></select>
+        <span id="t-pace" class="pace"><button id="t-pslow" class="sq" data-i18n-title="tl.pslow.t">−</button><span id="t-pval" class="mono short"></span><button id="t-pfast" class="sq" data-i18n-title="tl.pfast.t">+</button><button id="t-preset" data-i18n="tl.pace.reset" data-i18n-title="tl.pace.reset.t"></button><button id="t-pall" data-i18n="tl.pace.all" data-i18n-title="tl.pace.all.t"></button></span>
+        <button id="b-guide"><span data-i18n="tl.listen"></span><kbd>G</kbd></button></div>
       <div class="trow" data-i18n-title="tl.dur.t"><span class="tl" data-i18n="tl.dur"></span>
         <button id="t-shorter" class="sq" data-i18n-title="tl.shorter.t">−</button><span id="t-dur" class="mono"></span><button id="t-longer" class="sq" data-i18n-title="tl.longer.t">+</button>
         <button id="t-fit1"></button><button id="t-fit2"></button><button id="t-reset" data-i18n="tl.reset" data-i18n-title="tl.reset.t"></button></div>
+      <div class="trow" id="t-imgrow" data-i18n-title="tl.img.t"><span class="tl" data-i18n="tl.img"></span>
+        <span id="t-pos" class="mono"></span><button id="t-place"><span data-i18n="tl.place"></span><kbd>I</kbd></button><button id="t-follow" data-i18n="tl.follow" data-i18n-title="tl.follow.t"></button></div>
     </div>
     <div id="takes"></div>
   </footer>
@@ -397,8 +412,8 @@ details[open] > summary { margin-bottom: 8px; }
       <label data-i18n="pj.name"></label><input type="text" id="pj-name" />
       <label data-i18n="pj.lang"></label><select id="pj-lang"></select>
       <label data-i18n="pj.dir"></label><input type="text" id="pj-dir" placeholder="~/sosie/mon-projet" />
-      <label data-i18n="pj.script"></label><textarea id="pj-script" data-i18n-placeholder="pj.script.ph"></textarea>
-      <label data-i18n="pj.film"></label><input type="text" id="pj-film" data-i18n-placeholder="pj.film.ph" />
+      <label data-i18n="pj.script"></label><div><textarea id="pj-script" data-i18n-placeholder="pj.script.ph"></textarea><div class="row" style="margin-top:4px"><button id="pj-scriptpick" data-i18n="pj.script.pickbtn"></button><span id="pj-scriptfile" class="muted" style="font-size:12px"></span></div></div>
+      <label data-i18n="pj.film"></label><div class="row" style="flex-wrap:nowrap"><input type="text" id="pj-film" data-i18n-placeholder="pj.film.ph" /><button id="pj-filmpick" data-i18n="pj.choose"></button></div>
       <span></span><div class="row"><button class="primary" id="pj-create" data-i18n="pj.create"></button><span class="err" id="pj-err"></span></div>
     </div>
   </details>
@@ -407,6 +422,12 @@ details[open] > summary { margin-bottom: 8px; }
     <div class="fsbox" id="fs-list"></div>
     <p class="muted" style="font-size:12px;margin-top:6px" data-i18n="pj.browse.hint"></p>
   </details>
+</div></div>
+
+<div class="ov" id="pickdlg"><div class="dlg">
+  <h2><span id="pk-title"></span><button class="x" data-close>✕</button></h2>
+  <div class="row"><button id="pk-up">↑</button><input type="text" id="pk-dir" style="flex:1" /></div>
+  <div class="fsbox" id="pk-list" style="max-height:55vh"></div>
 </div></div>
 
 <div class="ov" id="scriptdlg"><div class="dlg" style="width:min(1000px,96vw)">

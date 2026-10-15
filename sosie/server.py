@@ -364,6 +364,25 @@ class Handler(BaseHTTPRequestHandler):
             write_json(pr.p("script.json"), {"chapters": chapters})
             A.open(pr.dir)
             return self.send_json(A.project.state())
+        # editing the script, the video, the timing, the pace
+        if (m := re.fullmatch(r"/api/line/([\w-]+)/(edit|delete)", p)) and m[1] in pr.byid:
+            pr.edit_line(m[1], js()["text"]) if m[2] == "edit" else pr.delete_line(m[1])
+            return self.send_json(pr.state())
+        if p == "/api/line/add":
+            d = js()
+            lid = pr.add_line(d.get("after"), d.get("text", ""))
+            return self.send_json({**pr.state(), "added": lid})
+        if p == "/api/film":
+            pr.set_film(js().get("path"))
+            return self.send_json(pr.state())
+        if p == "/api/timing":
+            d = js()
+            pr.set_timing(d.get("set") or {}, d.get("remove") or [])
+            return self.send_json(pr.state())
+        if p == "/api/pace":
+            d = js()
+            pr.set_pace(d.get("id"), d.get("wpm"))
+            return self.send_json(pr.state())
         if (m := re.fullmatch(r"/api/take/([\w-]+)", p)) and m[1] in pr.byid:
             if not is_wav(body):
                 raise ValueError("not a WAV file")
@@ -404,7 +423,7 @@ def browse(d):
             full = os.path.join(d, f)
             if os.path.isdir(full):
                 dirs.append({"name": f, "project": projects.is_project(full)})
-            elif f.lower().endswith((".txt", ".md", ".srt", ".json", ".mp4", ".mov", ".mkv", ".webm", ".wav", ".mp3", ".flac", ".ogg", ".m4a")):
+            elif f.lower().endswith((".txt", ".md", ".srt", ".json", ".mp4", ".m4v", ".mov", ".mkv", ".webm", ".wav", ".mp3", ".flac", ".ogg", ".m4a")):
                 files.append(f)
     except PermissionError:
         pass

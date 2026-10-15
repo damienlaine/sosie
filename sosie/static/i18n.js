@@ -4,6 +4,25 @@
 const I18N = { lang: "fr" };
 I18N.fr = {
   "tab.studio": "Studio", "tab.voices": "Voix", "tab.synth": "Synthèse",
+  // pace, video placement, text editing, file picker
+  "tl.pslow.t": "Débit plus lent (−5 mots/min)", "tl.pfast.t": "Débit plus rapide (+5 mots/min)", "tl.pace.val": "{w} mots/min",
+  "tl.pace.t": "Débit de cette réplique pour la bande estimée. Projet : {p} mots/min ({how})",
+  "tl.pace.reset": "↺", "tl.pace.reset.t": "Revenir au débit du projet", "tl.pace.all": "⇉ projet", "tl.pace.all.t": "Appliquer ce débit à tout le projet",
+  "tl.pace.alldone": "Débit du projet : {w} mots/min", "pace.default": "valeur par défaut", "pace.measured": "mesuré sur {n} prises micro", "pace.set": "réglé à la main",
+  "tl.img": "Image", "tl.img.t": "Où la réplique commence dans la vidéo : amenez la vidéo à l'endroit voulu, puis « Placer ici »",
+  "tl.place": "Placer ici", "tl.follow": "Placer la suite", "tl.follow.t": "Placer cette réplique et toutes les suivantes à la suite, chacune selon sa durée estimée (deux clics)",
+  "tl.follow.confirm": "Cliquez encore : cette réplique et les suivantes seront placées à la suite", "tl.pos": "début {t} · plan {s} s", "tl.unplaced": "pas encore placée",
+  "tl.placed": "{id} placée à {t}", "tl.followed": "{n} répliques placées à la suite à partir de {t}",
+  "ed.edit": "Modifier", "ed.edit.t": "Modifier le texte de la réplique (E)", "ed.add": "Réplique", "ed.add.t": "Ajouter une réplique après celle-ci",
+  "ed.del.t": "Supprimer la réplique (deux clics ; ses prises restent sur le disque)", "ed.save": "Enregistrer ⏎", "ed.cancel": "Annuler",
+  "ed.hint": "Échap pour annuler", "ed.ph": "Le texte de la réplique…", "ed.new": "Nouvelle réplique",
+  "ed.from": "Ce script est généré depuis {f} : il sera réécrit à la prochaine génération.",
+  "ed.del.confirm": "Cliquez encore pour supprimer cette réplique (ses prises restent dans takes/)", "ed.saved": "Texte enregistré",
+  "ed.added": "Réplique {id} ajoutée", "ed.deleted": "Réplique {id} supprimée",
+  "pj.film.choose": "Choisir une vidéo…", "pj.film.remove": "Retirer", "pj.film.pick": "Choisir une vidéo", "pj.film.set": "Vidéo : {f}",
+  "pj.film.laid": "Vidéo chargée. Les répliques sont placées à la suite depuis 0:00 : ajustez chaque début avec « Placer ici » (I).",
+  "pj.film.removed": "Vidéo retirée", "pj.choose": "Choisir…", "pj.script.pick": "Choisir un script", "pj.script.pickbtn": "Choisir un fichier…",
+  "pk.empty": "Aucun fichier de ce type ici",
   // studio tools (synthetic take, rythmo band, duration)
   "st.export": "▶ Exportée", "st.export.t": "Écouter la prise retenue telle qu'elle part dans la piste : coupée, débruitée, à niveau, à son tempo",
   "tl.synth": "✦ Synthèse", "tl.synth.t": "Faire dire la réplique par une voix de la bibliothèque : une prise de synthèse s'ajoute aux prises",
@@ -19,7 +38,7 @@ I18N.fr = {
   "tl.tempo.set": "Prise calée à {s} s (×{f})", "tl.tempo.far": "Prise calée à {s} s (×{f}) : au-delà de ±20 %, écoutez, la voix peut se dégrader",
   "tl.tempo.reset": "Prise à sa durée d'origine",
   "src.auto": "Auto · {x}", "src.take": "Prise retenue {n} · {s} s (temps Whisper)", "src.takesynth": "Prise retenue {n} (synthèse) · {s} s", "src.synth": "Synthèse {v} · {s} s",
-  "src.guide": "Synthèse importée · {s} s", "src.slot": "Durée du plan · {s} s", "src.pace": "Débit moyen · {s} s",
+  "src.guide": "Synthèse importée · {s} s", "src.slot": "Durée du plan · {s} s", "src.pace": "Débit {w} mots/min · {s} s",
   "tk.mic": "micro", "tk.unkeep.t": "Ne plus retenir cette prise (deux clics)", "tk.unkeep.guide": "Cliquez encore pour ne plus retenir cette prise : la piste reprendra la synthèse importée", "tk.unkeep.empty": "Cliquez encore pour ne plus retenir cette prise : la réplique sera vide dans la piste", "tk.relisten": "à réécouter", "tk.checked": "vérifiée",
   "tk.tempo.t": "Tempo appliqué dans la piste", "tk.synthnew": "Prise de synthèse",
   "tk.unkept": "Plus aucune prise retenue : la réplique est vide dans la piste", "tk.unkept.guide": "Plus aucune prise retenue : la piste reprend la synthèse importée",
@@ -153,20 +172,42 @@ I18N.fr = {
     <dt><kbd>F</kbd></dt><dd>Écouter la prise retenue sur l'image.</dd>
     <dt><kbd>T</kbd></dt><dd>Écouter la prise telle qu'elle part dans la piste (coupée, débruitée, à niveau, à son tempo).</dd>
     <dt><kbd>S</kbd></dt><dd>Générer une prise de synthèse avec la voix choisie.</dd>
+    <dt><kbd>E</kbd></dt><dd>Modifier le texte de la réplique.</dd>
+    <dt><kbd>I</kbd></dt><dd>Placer le début de la réplique à l'instant affiché par la vidéo.</dd>
     <dt><kbd>G</kbd></dt><dd>Écouter la source de la bande rythmo.</dd>
     <dt><kbd>1</kbd>…<kbd>9</kbd></dt><dd>Retenir la prise n.</dd>
     <dt><kbd>M</kbd></dt><dd>Texte entier / bande rythmo.</dd>
     <dt><kbd>V</kbd></dt><dd>Afficher / masquer l'image.</dd>
     <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Vitesse de défilement de la bande rythmo.</dd>`,
   "help.text": `<p><b>Prises.</b> Une réplique a des prises micro (🎙) et des prises de synthèse (✦, générées avec une voix de la bibliothèque). Une seule est retenue (★) : c'est elle qui part dans la piste.</p>
-    <p><b>Bande rythmo.</b> Elle fait défiler les mots au rythme d'une source, au choix : la prise retenue (les mots et les temps entendus par Whisper), la prise de synthèse, la synthèse importée, la durée du plan dans la vidéo, ou un débit moyen. Dites chaque mot quand il passe la barre. Le pré-roll fait démarrer l'image un peu avant la voix.</p>
+    <p><b>Bande rythmo.</b> Elle fait défiler les mots au rythme d'une source, au choix : la prise retenue (les mots et les temps entendus par Whisper), la prise de synthèse, la synthèse importée, la durée du plan dans la vidéo, ou un débit réglable (mots par minute, par réplique ou pour le projet ; par défaut mesuré sur vos prises micro). Dites chaque mot quand il passe la barre. Le pré-roll fait démarrer l'image un peu avant la voix.</p>
     <p><b>Durée.</b> La prise retenue peut être raccourcie ou allongée dans la piste (−/+ par pas de 2 %), ou calée d'un clic sur la durée du plan ou de la synthèse, sans changer la hauteur de la voix. Au-delà de ±20 %, écoutez : la voix peut se dégrader.</p>
+    <p><b>Vidéo.</b> Projet ▸ « Choisir une vidéo ». Chaque réplique se place sur l'image : amenez la vidéo au bon endroit et « Placer ici » (I) ; « Placer la suite » enchaîne les répliques suivantes selon leur durée estimée. Un script importé en .srt arrive déjà placé.</p>
+    <p><b>Texte.</b> ✎ Modifier (E), + Réplique, 🗑 sur la réplique courante ; Projet ▸ « Modifier le script » pour tout le texte d'un coup.</p>
     <p>Vous pouvez vous écarter du script : sous chaque prise s'affiche ce que vous avez dit, et c'est ce texte, mot à mot avec ses temps, qui part avec la prise.</p>
     <p>La prise retenue est exportée aussitôt dans la piste voix du projet (Projet ▸ Piste voix) : coupée, débruitée, à −20 LUFS, avec durations.json et words.json pour le montage.</p>
     <p>Débruitage : « Profil de bruit » enregistre 10 s de silence ; ce bruit est soustrait de la piste exportée, recalé sur le silence avant la première syllabe. À refaire si le bruit de la pièce change.</p>`,
 };
 I18N.en = {
   "tab.studio": "Studio", "tab.voices": "Voices", "tab.synth": "Synthesis",
+  "tl.pslow.t": "Slower pace (−5 words/min)", "tl.pfast.t": "Faster pace (+5 words/min)", "tl.pace.val": "{w} words/min",
+  "tl.pace.t": "Pace of this line for the estimated band. Project: {p} words/min ({how})",
+  "tl.pace.reset": "↺", "tl.pace.reset.t": "Back to the project's pace", "tl.pace.all": "⇉ project", "tl.pace.all.t": "Apply this pace to the whole project",
+  "tl.pace.alldone": "Project pace: {w} words/min", "pace.default": "default value", "pace.measured": "measured on {n} mic takes", "pace.set": "set by hand",
+  "tl.img": "Picture", "tl.img.t": "Where the line starts in the video: bring the video to the right spot, then \"Place here\"",
+  "tl.place": "Place here", "tl.follow": "Place the rest", "tl.follow.t": "Place this line and all the following ones one after the other, each for its estimated duration (two clicks)",
+  "tl.follow.confirm": "Click again: this line and the following ones will be placed one after the other", "tl.pos": "start {t} · shot {s} s", "tl.unplaced": "not placed yet",
+  "tl.placed": "{id} placed at {t}", "tl.followed": "{n} lines placed one after the other from {t}",
+  "ed.edit": "Edit", "ed.edit.t": "Edit the line's text (E)", "ed.add": "Line", "ed.add.t": "Add a line after this one",
+  "ed.del.t": "Delete the line (two clicks; its takes stay on disk)", "ed.save": "Save ⏎", "ed.cancel": "Cancel",
+  "ed.hint": "Esc to cancel", "ed.ph": "The line's text…", "ed.new": "New line",
+  "ed.from": "This script is generated from {f}: it will be rewritten the next time it is generated.",
+  "ed.del.confirm": "Click again to delete this line (its takes stay in takes/)", "ed.saved": "Text saved",
+  "ed.added": "Line {id} added", "ed.deleted": "Line {id} deleted",
+  "pj.film.choose": "Choose a video…", "pj.film.remove": "Remove", "pj.film.pick": "Choose a video", "pj.film.set": "Video: {f}",
+  "pj.film.laid": "Video loaded. Lines are placed one after the other from 0:00: adjust each start with \"Place here\" (I).",
+  "pj.film.removed": "Video removed", "pj.choose": "Choose…", "pj.script.pick": "Choose a script", "pj.script.pickbtn": "Choose a file…",
+  "pk.empty": "No file of this kind here",
   "st.export": "▶ Exported", "st.export.t": "Listen to the kept take as it goes into the track: trimmed, denoised, levelled, at its tempo",
   "tl.synth": "✦ Synthesis", "tl.synth.t": "Have a library voice say the line: a synthetic take joins the takes",
   "tl.gen": "Generate a take", "tl.gen.t": "Synthetic take of this line in the chosen voice (S)",
@@ -181,7 +222,7 @@ I18N.en = {
   "tl.tempo.set": "Take fitted to {s} s (×{f})", "tl.tempo.far": "Take fitted to {s} s (×{f}): beyond ±20 %, listen, the voice may degrade",
   "tl.tempo.reset": "Take back to its original duration",
   "src.auto": "Auto · {x}", "src.take": "Kept take {n} · {s} s (Whisper timings)", "src.takesynth": "Kept take {n} (synthesis) · {s} s", "src.synth": "Synthesis {v} · {s} s",
-  "src.guide": "Imported synthesis · {s} s", "src.slot": "Shot duration · {s} s", "src.pace": "Average pace · {s} s",
+  "src.guide": "Imported synthesis · {s} s", "src.slot": "Shot duration · {s} s", "src.pace": "Pace {w} words/min · {s} s",
   "tk.mic": "mic", "tk.unkeep.t": "Stop keeping this take (two clicks)", "tk.unkeep.guide": "Click again to stop keeping this take: the track will use the imported synthesis", "tk.unkeep.empty": "Click again to stop keeping this take: the line will be empty in the track", "tk.relisten": "listen again", "tk.checked": "checked",
   "tk.tempo.t": "Tempo applied in the track", "tk.synthnew": "Synthetic take",
   "tk.unkept": "No kept take any more: the line is empty in the track", "tk.unkept.guide": "No kept take any more: the track uses the imported synthesis",
@@ -308,14 +349,18 @@ I18N.en = {
     <dt><kbd>F</kbd></dt><dd>Listen to the kept take on the picture.</dd>
     <dt><kbd>T</kbd></dt><dd>Listen to the take as it goes into the track (trimmed, denoised, levelled, at its tempo).</dd>
     <dt><kbd>S</kbd></dt><dd>Generate a synthetic take in the chosen voice.</dd>
+    <dt><kbd>E</kbd></dt><dd>Edit the line's text.</dd>
+    <dt><kbd>I</kbd></dt><dd>Place the line's start at the video's current time.</dd>
     <dt><kbd>G</kbd></dt><dd>Listen to the source of the rythmo band.</dd>
     <dt><kbd>1</kbd>…<kbd>9</kbd></dt><dd>Keep take n.</dd>
     <dt><kbd>M</kbd></dt><dd>Full text / rythmo band.</dd>
     <dt><kbd>V</kbd></dt><dd>Show / hide the picture.</dd>
     <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Scrolling speed of the rythmo band.</dd>`,
   "help.text": `<p><b>Takes.</b> A line has microphone takes (🎙) and synthetic takes (✦, generated with a library voice). One is kept (★): that one goes into the track.</p>
-    <p><b>Rythmo band.</b> It scrolls the words at the pace of a source of your choice: the kept take (the words and timings Whisper heard), the synthetic take, the imported synthesis, the shot's duration in the video, or an average pace. Say each word as it crosses the bar. The pre-roll starts the picture a little before the voice.</p>
+    <p><b>Rythmo band.</b> It scrolls the words at the pace of a source of your choice: the kept take (the words and timings Whisper heard), the synthetic take, the imported synthesis, the shot's duration in the video, or an adjustable pace (words per minute, per line or for the project; by default measured on your mic takes). Say each word as it crosses the bar. The pre-roll starts the picture a little before the voice.</p>
     <p><b>Duration.</b> The kept take can be made shorter or longer in the track (−/+ in 2 % steps), or fitted in one click to the shot or the synthesis, pitch unchanged. Beyond ±20 %, listen: the voice may degrade.</p>
+    <p><b>Video.</b> Project ▸ "Choose a video". Each line is placed on the picture: bring the video to the right spot and "Place here" (I); "Place the rest" chains the following lines by their estimated duration. A script imported as .srt arrives already placed.</p>
+    <p><b>Text.</b> ✎ Edit (E), + Line, 🗑 on the current line; Project ▸ "Edit the script" for the whole text at once.</p>
     <p>You can stray from the script: what you said shows under each take, and that text, word by word with its timings, goes with the take.</p>
     <p>The kept take is exported at once to the project's voice track (Project ▸ Voice track): trimmed, denoised, at −20 LUFS, with durations.json and words.json for the edit.</p>
     <p>Denoising: "Noise profile" records 10 s of silence; that noise is subtracted from the exported track, matched to the silence before the first syllable. Redo it if the room noise changes.</p>`,

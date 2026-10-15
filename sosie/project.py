@@ -147,6 +147,104 @@ class Project:
         self.byid = {ln["id"]: ln for ln in self.lines}
         self.timing = read_json(self.path("timing"), {})
 
+    # ------------------------------------------------------------ editing the script, the video and the timing
+    def save_script(self):
+        """script.json from the lines in memory (the previous one kept as script.json.bak); chapters keep their titles."""
+        if os.path.exists(self.p("script.json")):
+            shutil.copy2(self.p("script.json"), self.p("script.json.bak"))
+        chapters = [{"title": ch["title"], "lines": [{k: ln[k] for k in ("id", "text", "note") if ln.get(k)}
+                                                     for ln in self.lines if ln["ch"] == ch["num"]]} for ch in self.chapters]
+        write_json(self.p("script.json"), {"chapters": chapters})
+        self.load_script()
+
+    def new_id(self):
+        """L001, L002…: never an id already used, nor one whose takes folder still exists (a deleted line keeps its takes)."""
+        used = set(self.byid) | set(os.listdir(self.path("takes")))
+        k = 1 + max([int(m[1]) for i in used if (m := re.fullmatch(r"L(\d+)", i))], default=0)
+        while f"L{k:03d}" in used:
+            k += 1
+        return f"L{k:03d}"
+
+    def edit_line(self, lid, text):
+        text = " ".join(text.split())
+        if not text:
+            raise ValueError("empty line")
+        with self.lock:
+            self.byid[lid]["text"] = text
+            self.save_script()
+
+    def add_line(self, after, text):
+        """A new line after the line `after` (in its chapter), or at the end."""
+        text = " ".join(text.split())
+        if not text:
+            raise ValueError("empty line")
+        with self.lock:
+            lid = self.new_id()
+            i = next((k + 1 for k, ln in enumerate(self.lines) if ln["id"] == after), len(self.lines))
+            ch = self.lines[i - 1]["ch"] if i else (self.chapters[0]["num"] if self.chapters else 0)
+            if not self.chapters:
+                self.chapters = [{"num": 0, "title": ""}]
+            self.lines.insert(i, {"id": lid, "ch": ch, "text": text})
+            self.save_script()
+            return lid
+
+    def delete_line(self, lid):
+        """The line leaves the script; its takes stay in takes/<id>/, its exported file goes to the trash."""
+        with self.lock:
+            self.lines = [ln for ln in self.lines if ln["id"] != lid]
+            self.save_script()
+            if self.sel.pop(lid, None) is not None:
+                self.save_sel()
+            exp = self.path("export")
+            dpath, wpath = os.path.join(exp, "durations.json"), os.path.join(exp, "words.json")
+            meta, words = read_json(dpath, {}), read_json(wpath, {})
+            if lid in meta or lid in words:
+                meta.pop(lid, None)
+                words.pop(lid, None)
+                write_json(dpath, meta)
+                write_json(wpath, words)
+            if os.path.exists(os.path.join(exp, lid + ".wav")):
+                shutil.move(os.path.join(exp, lid + ".wav"), os.path.join(self.path("trash"), f"export-{lid}-{time.strftime('%Y%m%d-%H%M%S')}.wav"))
+            if lid in self.timing:
+                self.timing.pop(lid)
+                write_json(self.path("timing"), self.timing)
+
+    def set_film(self, path):
+        with self.lock:
+            if path:
+                path = os.path.abspath(os.path.expanduser(path))
+                if not os.path.isfile(path):
+                    raise FileNotFoundError(path)
+                self.conf["film"] = os.path.relpath(path, self.dir)
+            else:
+                self.conf.pop("film", None)
+            self.save_conf()
+
+    def set_timing(self, upd, remove=()):
+        """Where lines sit in the video: {id: {"start", "dur", "vo"}} merged into timing.json."""
+        with self.lock:
+            for lid, tm in upd.items():
+                if lid in self.byid:
+                    self.timing[lid] = {k: round(float(tm[k]), 3) for k in ("start", "dur", "vo")}
+            for lid in remove:
+                self.timing.pop(lid, None)
+            write_json(self.path("timing"), self.timing)
+
+    def set_pace(self, lid, wpm):
+        """Speaking rate (words per minute) used to estimate the rythmo band: of one line, or the project's default (lid None)."""
+        with self.lock:
+            pace = self.settings.setdefault("pace", {})
+            v = round(min(400.0, max(40.0, float(wpm))), 1) if wpm else None
+            if lid is None:
+                pace["default"] = v
+            else:
+                lines = pace.setdefault("lines", {})
+                if v:
+                    lines[lid] = v
+                else:
+                    lines.pop(lid, None)
+            write_json(self.p("settings.json"), self.settings)
+
     # ------------------------------------------------------------ takes
     def take_path(self, lid, n, ext="wav"):
         return os.path.join(self.path("takes"), lid, f"t{n:02d}.{ext}")
@@ -472,7 +570,8 @@ class Project:
             film = self.film()
             return {"project": self.summary(), "chapters": self.chapters,
                     "settings": {**self.settings, "denoise": self.nr_depth()}, "noise": self.noise_state(),
-                    "film": "/film" if film else None, "filmName": self.conf.get("film"),
+                    "film": "/film" if film else None, "filmName": self.conf.get("film"), "filmPath": film,
+                    "scriptFrom": self.conf.get("script_from"),
                     "guideVoice": self.conf.get("guide_voice"),
                     "paths": {k: self.path(k) for k in ("takes", "export", "guide", "noise")},
                     "todo": read_json(self.path("todo"), []),

@@ -161,7 +161,7 @@ async function openProjectDialog() {
       <dt>${t("pj.k.export")}</dt><dd>${esc(d.paths.export)}</dd>
       <dt>${t("pj.k.takes")}</dt><dd>${esc(d.paths.takes)}</dd>
       <dt>${t("pj.k.guide")}</dt><dd>${esc(d.paths.guide)}${d.guideVoice ? ` (${esc(d.guideVoice)})` : ""}</dd>
-      <dt>${t("pj.k.film")}</dt><dd>${esc(d.filmName || "—")}</dd></dl>
+      <dt>${t("pj.k.film")}</dt><dd>${esc(d.filmPath || d.filmName || "—")} <button id="pj-film-choose">${t("pj.film.choose")}</button>${d.film ? ` <button id="pj-film-rm">${t("pj.film.remove")}</button>` : ""}</dd></dl>
       <div class="row" style="margin-top:10px">
         <button id="pj-edit">${t("pj.edit")}</button>
         <span class="spacer"></span><button id="pj-close">${t("pj.close")}</button></div>
@@ -170,6 +170,13 @@ async function openProjectDialog() {
         <select id="pj-gwhich"><option value="missing">${t("pj.synth.missing")}</option><option value="all">${t("pj.synth.all")}</option></select>
         <button id="pj-guide">${t("pj.synth.go")}</button></div><p class="muted" style="font-size:12px;margin-top:4px">${t("pj.synth.hint")}</p>` : ""}</div>`;
     $("#pj-edit").onclick = openScriptEditor;
+    $("#pj-film-choose").onclick = chooseFilm;
+    if ($("#pj-film-rm")) $("#pj-film-rm").onclick = async () => {
+      await post("/api/film", { path: null });
+      await loadProject();
+      toast(t("pj.film.removed"));
+      $("#projdlg").classList.remove("on");
+    };
     $("#pj-close").onclick = async () => {
       await post("/api/project/close");
       await refreshApp();
@@ -224,6 +231,63 @@ async function synthAll(vid, which) {
     toast(t("err", { e: e.message }));
   }
 }
+
+// file picker: folders and files of the given extensions; resolves with the chosen path
+function pickFile(title, exts) {
+  return new Promise((resolve) => {
+    $("#pk-title").textContent = title;
+    const show = async (dir) => {
+      let r;
+      try {
+        r = await api(`/api/fs?dir=${encodeURIComponent(dir || "")}`);
+      } catch {
+        r = await api("/api/fs?dir=");
+      }
+      LS.set("pkdir", r.dir);
+      $("#pk-dir").value = r.dir;
+      const box = $("#pk-list");
+      box.innerHTML = "";
+      r.dirs.forEach((d) => {
+        const it = el("div", "fe", `📁 ${esc(d.name)}`);
+        it.onclick = () => show(r.dir + "/" + d.name);
+        box.append(it);
+      });
+      r.files.filter((f) => exts.test(f)).forEach((f) => {
+        const it = el("div", "fe file pick", `${/\.(mp4|m4v|mov|mkv|webm)$/i.test(f) ? "🎞" : "📄"} ${esc(f)}`);
+        it.onclick = () => {
+          $("#pickdlg").classList.remove("on");
+          resolve(r.dir + "/" + f);
+        };
+        box.append(it);
+      });
+      if (!box.children.length) box.append(el("div", "fe muted", esc(t("pk.empty"))));
+      $("#pk-up").onclick = () => r.parent && show(r.parent);
+    };
+    $("#pk-dir").onkeydown = (e) => e.key === "Enter" && show(e.target.value);
+    show(LS.get("pkdir", S.data?.project.dir || ""));
+    $("#pickdlg").classList.add("on");
+  });
+}
+const VIDEO = /\.(mp4|m4v|mov|mkv|webm)$/i, SCRIPT = /\.(txt|md|srt|json)$/i;
+
+async function chooseFilm() {
+  const path = await pickFile(t("pj.film.pick"), VIDEO);
+  const st = await post("/api/film", { path });
+  const unplaced = st.lines.every((l) => !l.film);
+  await loadProject();
+  if (unplaced) {                       // nothing placed yet: the lines one after the other from the start, to adjust
+    applyState(await post("/api/timing", { set: layoutFrom(0, 0) }));
+    toast(t("pj.film.laid"), 6000);
+  } else toast(t("pj.film.set", { f: path.split("/").at(-1) }));
+  $("#projdlg").classList.remove("on");
+}
+
+$("#pj-filmpick").onclick = async () => ($("#pj-film").value = await pickFile(t("pj.film.pick"), VIDEO));
+$("#pj-scriptpick").onclick = async () => {
+  G.pick.script = await pickFile(t("pj.script.pick"), SCRIPT);
+  $("#pj-scriptfile").textContent = t("pj.script.file", { f: G.pick.script });
+  if (!$("#pj-name").value) $("#pj-name").value = G.pick.script.split("/").at(-1).replace(/\.\w+$/, "");
+};
 
 // folder picker
 G.pick = { script: null, film: null };
@@ -348,6 +412,15 @@ async function loadProject() {
   $("#filmon").disabled = !S.data.film;
   setFilm(S.film && !!S.data.film);
   noiseUI();
+  rebuildStudio();
+}
+
+function applyState(st, keepId) {
+  const id = keepId ?? (S.lines.length ? cur().id : null);
+  S.data = st;
+  S.lines = st.lines;
+  const i = S.lines.findIndex((l) => l.id === id);
+  S.cur = i >= 0 ? i : clamp(S.cur, 0, Math.max(0, S.lines.length - 1));
   rebuildStudio();
 }
 
@@ -804,6 +877,14 @@ function renderTools() {
   const list = sources(sh), src = bandSource(sh), want2 = LS.get(srcKey(), "auto");
   $("#t-src").innerHTML = `<option value="auto">${esc(t("src.auto", { x: src.label }))}</option>` + list.map((o) => `<option value="${o.key}">${esc(o.label)}</option>`).join("");
   $("#t-src").value = list.some((o) => o.key === want2) ? want2 : "auto";
+  const lp = linePace(sh), pp = projectPace();
+  $("#t-pace").classList.toggle("on", src.key === "pace");
+  $("#t-pval").textContent = t("tl.pace.val", { w: Math.round(lp.wpm) });
+  $("#t-pval").title = t("tl.pace.t", { p: Math.round(pp.wpm), how: t("pace." + pp.how, { n: pp.n }) });
+  $("#t-preset").style.display = $("#t-pall").style.display = lp.how === "line" ? "" : "none";
+  // image: where the line starts in the video
+  $("#t-imgrow").style.display = S.data.film ? "" : "none";
+  $("#t-pos").textContent = sh.film ? t("tl.pos", { t: fmt(sh.film.vo), s: (sh.slot ?? sh.film.dur).toFixed(1) }) : t("tl.unplaced");
   // duration of the kept take
   const tk = selTake(sh);
   const ok = !!(tk && tk.status === "ok");
@@ -836,6 +917,40 @@ async function setTempo(f) {
   if (Math.abs(f - 1) < 0.004) f = 1;
   replaceShot(await post(`/api/tempo/${encodeURIComponent(sh.id)}/${tk.n}`, { tempo: f }));
   toast(f === 1 ? t("tl.tempo.reset") : t(Math.abs(f - 1) > 0.2 ? "tl.tempo.far" : "tl.tempo.set", { s: (speechDur(tk) / f).toFixed(1), f: f.toFixed(2) }));
+}
+
+// where lines sit in the video: "Place here" puts the line's start at the picture's current time (the previous line now ends
+// there); "Place the rest" lays this line and the following ones one after the other, each for its estimated duration
+function layoutFrom(i0, t0) {
+  const set = {};
+  let x = t0;
+  for (let i = i0; i < S.lines.length; i++) {
+    const d = paceDur(S.lines[i]) + 0.6;
+    set[S.lines[i].id] = { start: x, vo: x, dur: d };
+    x += d;
+  }
+  return set;
+}
+
+async function placeHere() {
+  if (!S.data?.film || S.rec) return;
+  const sh = cur(), now = film.currentTime;
+  const others = S.lines.filter((l) => l.film && l !== sh);
+  const prev = others.filter((l) => l.film.vo < now).sort((a, b) => b.film.vo - a.film.vo)[0];
+  const next = others.filter((l) => l.film.vo > now).sort((a, b) => a.film.vo - b.film.vo)[0];
+  const set = { [sh.id]: { start: now, vo: now, dur: next ? next.film.start - now : paceDur(sh) + 0.6 } };
+  if (prev) set[prev.id] = { ...prev.film, dur: Math.max(0.2, now - prev.film.start) };
+  applyState(await post("/api/timing", { set }));
+  toast(t("tl.placed", { id: sh.id, t: fmt(now) }));
+}
+
+async function placeFollowing() {
+  if (!S.data?.film || S.rec) return;
+  const sh = cur();
+  if (!confirmTwice($("#t-imgrow"), t("tl.follow.confirm"))) return;
+  const t0 = sh.film ? sh.film.vo : film.currentTime;
+  applyState(await post("/api/timing", { set: layoutFrom(S.cur, t0) }));
+  toast(t("tl.followed", { n: S.lines.length - S.cur, t: fmt(t0) }));
 }
 
 S.gen = {};
@@ -879,7 +994,7 @@ async function genSynth() {
 // ------------------------------------------------------------------ rythmo band and karaoke
 function estimate(tok, dur) {
   const wt = tok.map((x) => x.t.replace(/[^\p{L}\p{N}]/gu, "").length + 2);
-  const pause = tok.map((x) => (x.p ? 5 : 0));
+  const pause = tok.map((x) => (x.p ? 5 : /,$/.test(x.t) ? 2 : 0));      // a sentence end weighs 5 letters, a comma 2
   const total = wt.reduce((a, b) => a + b, 0) + pause.reduce((a, b) => a + b, 0) || 1;
   const k = Math.max(0.3, dur - 0.2) / total;
   let x = 0.1;
@@ -930,10 +1045,43 @@ function sources(sh) {
   if (sh.gdur) out.push({ key: "guide", label: t("src.guide", { s: sh.gdur.toFixed(1) }), words: () => guideWords(sh),
     audio: () => ({ url: `/guide/${encodeURIComponent(sh.id)}.wav?v=${encodeURIComponent(sh.gtext || "")}`, a: 0 }) });
   if (sh.slot) out.push({ key: "slot", label: t("src.slot", { s: sh.slot.toFixed(1) }), words: () => estimate(sh.tok, sh.slot) });
-  const avg = sh.tok.length / 2.45 + 0.4;
-  out.push({ key: "pace", label: t("src.pace", { s: avg.toFixed(1) }), words: () => estimate(sh.tok, avg) });
+  const pd = paceDur(sh);
+  out.push({ key: "pace", label: t("src.pace", { w: linePace(sh).wpm, s: pd.toFixed(1) }), words: () => estimate(sh.tok, pd) });
   return out;
 }
+// Speaking rate for the estimated band: the line's own, else the project's (set by hand, else measured on the kept
+// microphone takes, 3 at least), else 147 words per minute.
+const DEFAULT_WPM = 147;
+function measuredPace() {
+  let w = 0, d = 0, n = 0;
+  for (const sh of S.lines) {
+    const tk = selTake(sh);
+    if (!tk || tk.status !== "ok" || tk.kind === "synth" || !tk.heard) continue;
+    const k = tk.heard.filter((x) => LETTER.test(x.t)).length, dd = speechDur(tk) / tempoOf(tk) - 0.4;
+    if (k && dd > 0.5) {
+      w += k;
+      d += dd;
+      n++;
+    }
+  }
+  return n >= 3 ? { wpm: Math.round((60 * w) / d), n } : null;
+}
+function projectPace() {
+  const p = S.data.settings.pace || {};
+  if (p.default) return { wpm: p.default, how: "set" };
+  const m = measuredPace();
+  return m ? { wpm: m.wpm, how: "measured", n: m.n } : { wpm: DEFAULT_WPM, how: "default" };
+}
+function linePace(sh) {
+  const v = S.data.settings.pace?.lines?.[sh.id];
+  return v ? { wpm: v, how: "line" } : projectPace();
+}
+const paceDur = (sh) => sh.tok.length / (linePace(sh).wpm / 60) + 0.4;
+
+async function setPace(id, wpm) {
+  applyState(await post("/api/pace", { id, wpm }));
+}
+
 function bandSource(sh) {
   const list = sources(sh);
   const want = LS.get(srcKey(), "auto");
@@ -1096,9 +1244,14 @@ function buildScript() {
       const title = chapTitle(ch);
       if (title) box.append(el("div", "chap", title));
     }
-    const d = el("div", (S.data.todo || []).includes(sh.id) ? "shot todo" : "shot", `<div class="sh-h"><span class="sid" data-todo=" · ${esc(t("st.todo1"))}">${esc(sh.id)}</span><span class="st"></span></div><p>${paraHTML(sh)}</p>`);
+    const d = el("div", (S.data.todo || []).includes(sh.id) ? "shot todo" : "shot", `<div class="sh-h"><span class="sid" data-todo=" · ${esc(t("st.todo1"))}">${esc(sh.id)}</span><span class="st"></span>
+      <span class="acts"><button data-a="edit" title="${esc(t("ed.edit.t"))}">✎ ${t("ed.edit")}</button><button data-a="add" title="${esc(t("ed.add.t"))}">+ ${t("ed.add")}</button><button data-a="del" title="${esc(t("ed.del.t"))}">🗑</button></span></div><p>${paraHTML(sh)}</p>`);
     d.id = "s-" + sh.id;
-    d.onclick = () => go(i);
+    d.onclick = (e) => !e.target.closest(".editor") && go(i);
+    d.querySelectorAll(".acts button").forEach((b) => (b.onclick = (e) => {
+      e.stopPropagation();
+      lineAction(b.dataset.a, b.closest(".shot"));
+    }));
     box.append(d);
     shotStatus(sh);
   });
@@ -1145,7 +1298,106 @@ function shotStatus(sh) {
 }
 
 function renderCurText() {
-  $("#curtext").innerHTML = `<p>${paraHTML(cur())}</p>`;
+  if (G.editing) return;
+  $("#curtext").innerHTML = `<div class="curacts"><button data-a="edit" title="${esc(t("ed.edit.t"))}">✎ ${t("ed.edit")}</button><button data-a="add" title="${esc(t("ed.add.t"))}">+ ${t("ed.add")}</button><button data-a="del" title="${esc(t("ed.del.t"))}">🗑</button></div><p>${paraHTML(cur())}</p>`;
+  $("#curtext").querySelectorAll(".curacts button").forEach((b) => (b.onclick = () => lineAction(b.dataset.a, $("#curtext"))));
+}
+
+// ------------------------------------------------------------------ editing the text: the current line, a new line after it
+function lineAction(a, box) {
+  if (a === "edit") editLine();
+  else if (a === "add") editLine(true);
+  else if (a === "del" && confirmTwice(box, t("ed.del.confirm"))) deleteLine();
+}
+
+function editLine(add = false) {
+  if (!S.data || !S.lines.length || S.rec || G.editing) return;
+  stopPlay();
+  const sh = cur();
+  G.editing = true;
+  let host, restore;
+  if (S.mode === "texte") {
+    const card = document.getElementById("s-" + sh.id);
+    if (add) {
+      host = el("div", "shot newline", `<div class="sh-h"><span class="sid">${esc(t("ed.new"))}</span></div>`);
+      card.after(host);
+      restore = () => host.remove();
+    } else {
+      host = card;
+      const p = card.querySelector("p");
+      p.style.display = "none";
+      restore = () => {
+        p.style.display = "";
+        host.querySelector(".editor")?.remove();
+      };
+    }
+  } else {
+    host = $("#curtext");
+    host.innerHTML = "";
+    restore = () => {};
+  }
+  const ed = el("div", "editor");
+  const ta = el("textarea");
+  ta.value = add ? "" : sh.text;
+  ta.placeholder = t("ed.ph");
+  const bar = el("div", "row", `<button class="primary">${t("ed.save")}</button><button>${t("ed.cancel")}</button><span class="muted">${t("ed.hint")}</span>${S.data.scriptFrom ? `<span class="warn">${esc(t("ed.from", { f: S.data.scriptFrom }))}</span>` : ""}`);
+  ed.append(ta, bar);
+  host.append(ed);
+  const fit = () => {
+    ta.style.height = "auto";
+    ta.style.height = ta.scrollHeight + 4 + "px";
+  };
+  const close = () => {
+    G.editing = false;
+    restore();
+    renderCurText();
+  };
+  const save = async () => {
+    const text = ta.value.trim();
+    if (!text) return close();
+    try {
+      if (add) {
+        const st = await post("/api/line/add", { after: sh.id, text });
+        G.editing = false;
+        applyState(st, st.added);
+        toast(t("ed.added", { id: st.added }));
+      } else {
+        if (text !== sh.text) {
+          G.editing = false;
+          applyState(await post(`/api/line/${encodeURIComponent(sh.id)}/edit`, { text }));
+          toast(t("ed.saved"));
+        } else close();
+      }
+    } catch (e) {
+      toast(t("err", { e: e.message }));
+    }
+  };
+  bar.children[0].onclick = save;
+  bar.children[1].onclick = close;
+  ta.addEventListener("input", fit);
+  ta.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      save();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+    }
+  });
+  requestAnimationFrame(() => {
+    fit();
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    if (S.mode === "texte") host.scrollIntoView({ block: "center", behavior: "smooth" });
+  });
+}
+
+async function deleteLine() {
+  const sh = cur();
+  const next = S.lines[S.cur + 1] || S.lines[S.cur - 1];
+  applyState(await post(`/api/line/${encodeURIComponent(sh.id)}/delete`), next?.id);
+  toast(t("ed.deleted", { id: sh.id }));
 }
 
 function renderInfo() {
@@ -1291,7 +1543,7 @@ function refresh(id) {
 }
 
 function go(i, instant = false) {
-  if (S.rec || !S.lines.length) return;
+  if (S.rec || !S.lines.length || G.editing) return;
   stopPlay();
   S.cur = clamp(i, 0, S.lines.length - 1);
   LS.set(curKey(), S.cur);
@@ -1369,6 +1621,18 @@ $("#t-voice").onchange = (e) => {
 $("#t-shorter").onclick = () => setTempo(tempoOf(selTake(cur())) * 1.02);
 $("#t-longer").onclick = () => setTempo(tempoOf(selTake(cur())) / 1.02);
 $("#t-reset").onclick = () => setTempo(1);
+$("#t-pslow").onclick = () => setPace(cur().id, linePace(cur()).wpm - 5);
+$("#t-pfast").onclick = () => setPace(cur().id, linePace(cur()).wpm + 5);
+$("#t-preset").onclick = () => setPace(cur().id, null);
+$("#t-pall").onclick = async () => {
+  const w = linePace(cur()).wpm;
+  await post("/api/pace", { id: null, wpm: w });
+  await setPace(cur().id, null);
+  toast(t("tl.pace.alldone", { w: Math.round(w) }));
+};
+$("#t-place").onclick = placeHere;
+$("#t-follow").onclick = placeFollowing;
+film.addEventListener("focus", () => film.blur()); // the native controls must not take Space (record) or the arrows
 $("#b-prev").onclick = () => go(S.cur - 1);
 $("#b-next").onclick = () => go(S.cur + 1);
 $("#clip").onclick = () => $("#clip").classList.remove("on");
@@ -1424,7 +1688,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === " " || e.key === "Escape") e.target.blur();
     else return;
   }
-  if (e.target.matches("textarea")) return;
+  if (e.target.matches("textarea") || G.editing) return;
   if ($("#gate").classList.contains("on")) {
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
@@ -1458,6 +1722,8 @@ document.addEventListener("keydown", (e) => {
     case "f": case "F": S.play?.kind === "film" ? stopPlay() : playTake(null, true); break;
     case "g": case "G": S.play?.kind === "guide" ? stopPlay() : playRythmo(); break;
     case "s": case "S": genSynth(); break;
+    case "i": case "I": placeHere(); break;
+    case "e": case "E": editLine(); break;
     case "t": case "T": S.play?.kind === "proc" ? stopPlay() : playExport(); break;
     case "m": case "M": setMode(S.mode === "texte" ? "rythmo" : "texte"); break;
     case "v": case "V": setFilm(!S.film); break;
