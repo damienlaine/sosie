@@ -1,0 +1,429 @@
+"""A recording project: a folder with a script (lines, optionally grouped in chapters), the takes recorded for each line,
+the take kept for each line, and a voice track exported for the edit.
+
+<project>/
+  sosie.json        name, language, kind ("script", or "voice" for the reading of a voice's samples), optional film and paths
+  script.json       {"chapters": [{"title": …, "lines": [{"id": …, "text": …}]}]}
+  timing.json       optional: where each line sits in the reference film {id: {start, dur, vo}}
+  takes/<id>/tNN.wav + tNN.json   every take (24-bit), with its analysis: words heard with timings, speech bounds, peaks
+  selection.json    the take kept for each line
+  settings.json     input channel, denoising depth
+  noise.wav         10 s of open-mic silence: the background noise profile
+  trash/            discarded takes
+  todo.json         optional: lines to record first, in order
+  guide/            optional guide voice (for the rythmo band and to fill lines without a take): <id>.wav, durations.json, words.json
+  export/           the voice track for the edit: <id>.wav (48 kHz, 16-bit, trimmed, denoised, levelled), durations.json, words.json
+
+Every path can be redirected in sosie.json ("paths"), so an existing production keeps its own layout."""
+import itertools
+import os
+import queue
+import re
+import shutil
+import threading
+import time
+import traceback
+
+import numpy as np
+
+from . import audio
+from .asr import align
+from .text import tokens, words_to_tokens
+from .util import home, log, read_json, stamp, write_json
+
+ID = re.compile(r"[\w-]+")
+NR_LEVELS = (0, 8, 14, 20)      # dB: maximum background-noise reduction (none, light, normal, strong)
+DEFAULT_PATHS = {"takes": "takes", "trash": "trash", "noise": "noise.wav", "todo": "todo.json", "guide": "guide",
+                 "export": "export", "timing": "timing.json", "guide_words": "guide-words.json"}
+
+
+class Worker(threading.Thread):
+    """One queue for the speech model: takes first, then the guide asked for, then the guide in the background."""
+
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.q, self.seq = queue.PriorityQueue(), itertools.count()
+
+    def put(self, prio, fn, *args):
+        self.q.put((prio, next(self.seq), fn, args))
+
+    def run(self):
+        while True:
+            _, _, fn, args = self.q.get()
+            try:
+                fn(*args)
+            except Exception:
+                traceback.print_exc()
+
+
+def is_project(path):
+    return os.path.isfile(os.path.join(path, "sosie.json"))
+
+
+def create(path, name, lang, chapters, kind="script", film=None, timing=None, extra=None):
+    """New project folder. chapters: [{"title", "lines": [{"id", "text"}]}]."""
+    os.makedirs(path, exist_ok=True)
+    if is_project(path):
+        raise FileExistsError(f"{path} is already a Sosie project")
+    ids = [ln["id"] for ch in chapters for ln in ch["lines"]]
+    bad = [i for i in ids if not ID.fullmatch(i)]
+    if bad or len(set(ids)) != len(ids):
+        raise ValueError(f"line ids must be unique and made of letters, digits, - and _: {bad[:5] or 'duplicates'}")
+    conf = {"sosie": 1, "kind": kind, "name": name, "lang": lang, "created": stamp(), **(extra or {})}
+    if film:
+        conf["film"] = os.path.relpath(os.path.abspath(film), path)
+    write_json(os.path.join(path, "sosie.json"), conf)
+    write_json(os.path.join(path, "script.json"), {"chapters": chapters})
+    if timing:
+        write_json(os.path.join(path, "timing.json"), timing)
+    return path
+
+
+def recent(add=None, remove=None):
+    """Recently opened projects (most recent first)."""
+    p = os.path.join(home(), "recent.json")
+    lst = [x for x in read_json(p, []) if isinstance(x, str)]
+    if add:
+        lst = [os.path.abspath(add)] + [x for x in lst if x != os.path.abspath(add)]
+    if remove:
+        lst = [x for x in lst if x != os.path.abspath(remove)]
+    if add or remove:
+        write_json(p, lst[:20])
+    return [x for x in lst if is_project(x)]
+
+
+class Project:
+    def __init__(self, path, worker, transcriber):
+        self.dir = os.path.abspath(path)
+        self.work, self.asr = worker, transcriber
+        self.lock = threading.RLock()
+        self.conf = read_json(self.p("sosie.json"), None)
+        if self.conf is None:
+            raise FileNotFoundError(f"no sosie.json in {self.dir}")
+        self.load_script()
+        for d in (self.path("takes"), self.path("trash")):
+            os.makedirs(d, exist_ok=True)
+        self.sel = read_json(self.p("selection.json"), {})
+        self.settings = read_json(self.p("settings.json"), {"channel": "auto"})
+        self.gw = read_json(self.path("guide_words"), {})
+        self.tk = {}                                       # line -> {n: take metadata}
+        self.load_takes()
+
+    # ------------------------------------------------------------ paths and script
+    def p(self, *a):
+        return os.path.join(self.dir, *a)
+
+    def path(self, key):
+        return os.path.normpath(self.p(self.conf.get("paths", {}).get(key, DEFAULT_PATHS[key])))
+
+    @property
+    def lang(self):
+        return self.conf.get("lang", "fr")
+
+    @property
+    def name(self):
+        return self.conf.get("name") or os.path.basename(self.dir)
+
+    @property
+    def kind(self):
+        return self.conf.get("kind", "script")
+
+    def film(self):
+        f = self.conf.get("film")
+        return os.path.normpath(self.p(f)) if f and os.path.isfile(self.p(f)) else None
+
+    def save_conf(self):
+        write_json(self.p("sosie.json"), self.conf)
+
+    def load_script(self):
+        sc = read_json(self.p("script.json"), {"chapters": []})
+        chapters = sc.get("chapters") or [{"title": "", "lines": sc.get("lines", [])}]
+        self.chapters, self.lines = [], []
+        for ci, ch in enumerate(chapters):
+            self.chapters.append({"num": ci, "title": ch.get("title", "")})
+            for ln in ch.get("lines", []):
+                self.lines.append({"id": ln["id"], "ch": ci, "text": ln["text"], **({"note": ln["note"]} if ln.get("note") else {})})
+        self.byid = {ln["id"]: ln for ln in self.lines}
+        self.timing = read_json(self.path("timing"), {})
+
+    # ------------------------------------------------------------ takes
+    def take_path(self, lid, n, ext="wav"):
+        return os.path.join(self.path("takes"), lid, f"t{n:02d}.{ext}")
+
+    def save_meta(self, lid, n):
+        write_json(self.take_path(lid, n, "json"), self.tk[lid][n])
+
+    def save_sel(self):
+        write_json(self.p("selection.json"), self.sel)
+
+    def load_takes(self):
+        for ln in self.lines:
+            d = os.path.join(self.path("takes"), ln["id"])
+            if not os.path.isdir(d):
+                continue
+            for f in sorted(os.listdir(d)):
+                if re.fullmatch(r"t\d+\.json", f):
+                    m = read_json(os.path.join(d, f), None)
+                    if m and os.path.exists(os.path.join(d, m["file"])):
+                        self.tk.setdefault(ln["id"], {})[m["n"]] = m
+
+    def resume(self):
+        """Analyses interrupted by a restart, and the guide words, are queued again."""
+        for lid, takes in self.tk.items():
+            for n, m in takes.items():
+                if m.get("status") == "analyse" or (m.get("status") == "ok" and "heard" not in m):
+                    self.work.put(0, self.analyse, lid, n)
+        for ln in self.lines:
+            self.work.put(2, self.guide_words, ln["id"])
+
+    def next_n(self, lid):
+        d, trash = os.path.join(self.path("takes"), lid), self.path("trash")
+        used = [int(m[1]) for f in os.listdir(d) if (m := re.fullmatch(r"t(\d+)\.wav", f))]
+        used += [int(m[1]) for f in os.listdir(trash) if (m := re.fullmatch(rf"{re.escape(lid)}-t(\d+)-.*\.wav", f))]
+        return max(used, default=0) + 1
+
+    def new_take(self, lid, body, info):
+        with self.lock:
+            os.makedirs(os.path.join(self.path("takes"), lid), exist_ok=True)
+            n = self.next_n(lid)
+            with open(self.take_path(lid, n), "wb") as f:
+                f.write(body)
+            try:
+                info = dict(info, source=audio.dual_mono(self.take_path(lid, n), self.settings.get("channel", "auto")))
+            except Exception:
+                traceback.print_exc()
+            self.tk.setdefault(lid, {})[n] = {"n": n, "file": f"t{n:02d}.wav", "created": stamp(),
+                                              "text": self.byid[lid]["text"], "status": "analyse", "rec": info}
+            self.save_meta(lid, n)
+            self.sel[lid] = n                          # the latest take is kept by default
+            self.save_sel()
+        log(f"{lid} take {n} received ({len(body) / 1e6:.1f} MB)")
+        self.work.put(0, self.analyse, lid, n)
+        return self.tk[lid][n]
+
+    def analyse(self, lid, n):
+        with self.lock:
+            m = self.tk.get(lid, {}).get(n)
+        if not m:
+            return
+        t0 = time.time()
+        try:
+            x, sr = audio.read_wav(self.take_path(lid, n))
+            ch = audio.pick_channel(x, self.settings.get("channel", "auto"))
+            y = x[:, ch]
+            asr = self.asr.transcribe(audio.to16k(y, sr), self.lang)
+            asr += self.asr.tail_words(y, sr, asr, self.lang)
+            peak = float(np.abs(y).max()) if len(y) else 0.0
+            upd = dict(status="ok", ch=ch, channels=int(x.shape[1]), sr=sr, dur=round(len(y) / sr, 3),
+                       trim=audio.speech_bounds(y, sr, asr), peaks=audio.peaks(y),
+                       peak_db=round(20 * np.log10(peak + 1e-9), 1), clips=int((np.abs(y) >= audio.CLIP).sum()),
+                       heard=[{"t": w, "s": a, "e": b} for w, a, b in asr], asr=" ".join(w[0] for w in asr))
+        except Exception as e:
+            traceback.print_exc()
+            upd = dict(status="erreur", error=str(e)[:300])
+        with self.lock:
+            if n not in self.tk.get(lid, {}):
+                return                                 # discarded during the analysis
+            self.tk[lid][n].update(upd)
+            self.save_meta(lid, n)
+            log(f"{lid} take {n} analysed in {time.time() - t0:.1f} s: {upd.get('asr', '')[:60]}")
+            if self.sel.get(lid) == n:
+                self.export(lid)
+
+    def discard(self, lid, n):
+        with self.lock:
+            m = self.tk.get(lid, {}).pop(n, None)
+            if not m:
+                return
+            st = time.strftime("%Y%m%d-%H%M%S")
+            for ext in ("wav", "json"):
+                p = self.take_path(lid, n, ext)
+                if os.path.exists(p):
+                    shutil.move(p, os.path.join(self.path("trash"), f"{lid}-t{n:02d}-{st}.{ext}"))
+            if self.sel.get(lid) == n:
+                rest = [k for k, v in self.tk.get(lid, {}).items() if v.get("status") != "erreur"]
+                if rest:
+                    self.sel[lid] = max(rest)
+                else:
+                    self.sel.pop(lid, None)
+                self.save_sel()
+                self.export(lid)
+        log(f"{lid} take {n} discarded")
+
+    def select(self, lid, n):
+        with self.lock:
+            if n is None:
+                self.sel.pop(lid, None)
+            elif n in self.tk.get(lid, {}):
+                self.sel[lid] = n
+            self.save_sel()
+            self.export(lid)
+
+    # ------------------------------------------------------------ export to the edit
+    def nr_depth(self):
+        d = self.settings.get("denoise", 14)
+        return d if d in NR_LEVELS else 14
+
+    def export(self, lid):
+        """Puts the kept take of the line (or, failing that, the guide voice) in the export folder."""
+        exp = self.path("export")
+        os.makedirs(exp, exist_ok=True)
+        with self.lock:
+            n = self.sel.get(lid)
+            m = self.tk.get(lid, {}).get(n)
+            dpath, wpath = os.path.join(exp, "durations.json"), os.path.join(exp, "words.json")
+            meta, words = read_json(dpath, {}), read_json(wpath, {})
+            out = os.path.join(exp, lid + ".wav")
+            if m is None:
+                if meta.get(lid, {}).get("src") in ("voix", "take"):
+                    gmeta = self.guide_meta().get(lid)
+                    gwav = os.path.join(self.path("guide"), lid + ".wav")
+                    if gmeta and os.path.exists(gwav) and os.path.realpath(gwav) != os.path.realpath(out):
+                        shutil.copy2(gwav, out)
+                        meta[lid] = gmeta
+                        gw = read_json(os.path.join(self.path("guide"), "words.json"), {}).get(lid)
+                        if gw:
+                            words[lid] = gw
+                        else:
+                            words.pop(lid, None)
+                        log(f"{lid}: back to the guide voice")
+                    else:
+                        meta.pop(lid, None)
+                        words.pop(lid, None)
+                        if os.path.exists(out):
+                            os.remove(out)
+                    write_json(dpath, meta)
+                    write_json(wpath, words)
+                return
+            if m.get("status") != "ok":
+                return                                 # exported at the end of the analysis
+            a, b = m["trim"]
+            d = b - a
+            tmp = [os.path.join(exp, f".export-{k}.wav") for k in range(4)]
+            src, ch, nr = self.take_path(lid, n), m["ch"], None
+            depth = self.nr_depth()
+            target = float(self.conf.get("export", {}).get("lufs", -20.0))
+            if depth:
+                x, sr = audio.read_wav(src)
+                y, nr = audio.denoise(x[:, ch], sr, self.path("noise"), (0.3, a - 0.25), depth)
+                if nr is not None:
+                    audio.write_wav24(tmp[0], y[:, None], sr)
+                    src, ch = tmp[0], 0
+            audio.ffmpeg("-i", src, "-af",
+                         f"pan=mono|c0=c{ch},atrim={a}:{b},asetpts=PTS-STARTPTS,highpass=f=70,"
+                         f"afade=t=in:d=0.02,afade=t=out:st={max(0.0, d - 0.08):.3f}:d=0.08", "-c:a", "pcm_f32le", tmp[1])
+            i1, _ = audio.loudness(tmp[1])
+            g1 = target - i1 if i1 > -70 else 0.0
+            audio.ffmpeg("-i", tmp[1], "-af", f"volume={g1:.2f}dB,acompressor=threshold=0.126:ratio=2:attack=10:release=150",
+                         "-c:a", "pcm_f32le", tmp[2])
+            i2, p2 = audio.loudness(tmp[2])
+            g2 = min(target - i2 if i2 > -70 else 0.0, -1.5 - p2)
+            audio.ffmpeg("-i", tmp[2], "-af", f"volume={g2:.2f}dB", "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", tmp[3])
+            os.replace(tmp[3], out)
+            for t in tmp[:3]:
+                if os.path.exists(t):
+                    os.remove(t)
+            dur = audio.wav_duration(out)
+            meta[lid] = {"text": self.byid[lid]["text"], "dur": round(dur, 2), "src": self.conf.get("export", {}).get("src", "take"),
+                         "take": n, "denoise": depth if nr is not None else 0, "at": time.strftime("%H%M%S")}
+            words[lid] = [{"t": w["t"], "s": round(max(0.0, w["s"] - a), 3), "e": round(max(0.0, w["e"] - a), 3)}
+                          for w in m["heard"]]
+            write_json(dpath, meta)
+            write_json(wpath, words)
+            log(f"{lid}: take {n} exported ({dur:.2f} s" + (f", denoised -{depth} dB, profile {nr:+.1f} dB)" if nr is not None else ")"))
+
+    def export_all(self):
+        """After a change of denoising or noise profile: every kept take again (the lock is released in between)."""
+        for lid in list(self.sel):
+            with self.lock:
+                ok = self.sel.get(lid) in self.tk.get(lid, {})
+            if ok:
+                self.export(lid)
+
+    def export_version(self, lid):
+        """Version of the exported file (to listen to the processed take), if it is a real take."""
+        m = read_json(os.path.join(self.path("export"), "durations.json"), {}).get(lid, {})
+        return f'{m.get("take")}-{m.get("denoise")}-{m.get("at")}' if m.get("src") in ("voix", "take") else None
+
+    # ------------------------------------------------------------ noise profile and settings
+    def save_noise(self, body):
+        path = self.path("noise")
+        tmp = path + ".tmp"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp, "wb") as f:
+            f.write(body)
+        audio.dual_mono(tmp)
+        os.replace(tmp, path)
+        log("new background noise profile")
+        self.work.put(0, self.export_all)
+
+    def noise_state(self):
+        path = self.path("noise")
+        if not os.path.exists(path):
+            return None
+        return {"date": time.strftime("%d/%m %H:%M", time.localtime(os.path.getmtime(path))), "dur": round(audio.wav_duration(path), 1)}
+
+    def update_settings(self, upd):
+        with self.lock:
+            old = self.nr_depth()
+            self.settings.update({k: v for k, v in upd.items() if k in ("channel", "denoise")})
+            write_json(self.p("settings.json"), self.settings)
+            if self.nr_depth() != old:
+                self.work.put(0, self.export_all)
+        return {**self.settings, "denoise": self.nr_depth()}
+
+    # ------------------------------------------------------------ guide voice
+    def guide_meta(self):
+        return read_json(os.path.join(self.path("guide"), "durations.json"), {})
+
+    def guide_words(self, lid):
+        """Word timings of the guide voice: from the guide's words.json when it matches the text, else from Whisper (cached)."""
+        gm = self.guide_meta().get(lid)
+        wav = os.path.join(self.path("guide"), lid + ".wav")
+        if not gm or not os.path.exists(wav) or self.gw.get(lid, {}).get("text") == gm["text"]:
+            return
+        ws = words_to_tokens(gm["text"], read_json(os.path.join(self.path("guide"), "words.json"), {}).get(lid))
+        if ws is None:
+            x, sr = audio.read_wav(wav)
+            y = x[:, 0]
+            ws, _, _ = align(tokens(gm["text"]), self.asr.transcribe(audio.to16k(y, sr), self.lang), len(y) / sr)
+        with self.lock:
+            self.gw[lid] = {"text": gm["text"], "words": [{"t": w["t"], "s": w["s"], "e": w["e"]} for w in ws]}
+            write_json(self.path("guide_words"), self.gw)
+
+    # ------------------------------------------------------------ state for the page
+    def line_state(self, ln, gmeta=None):
+        lid = ln["id"]
+        gm = (self.guide_meta() if gmeta is None else gmeta).get(lid, {})
+        gw = self.gw.get(lid)
+        return {**ln, "tok": tokens(ln["text"]), "film": self.timing.get(lid),
+                "gdur": gm.get("dur"), "gtext": gm.get("text"),
+                "guide": gw["words"] if gw and gw["text"] == gm.get("text") == ln["text"] else None,
+                "takes": [self.tk[lid][n] for n in sorted(self.tk.get(lid, {}))], "sel": self.sel.get(lid),
+                "export": self.export_version(lid)}
+
+    def summary(self):
+        return {"dir": self.dir, "name": self.name, "lang": self.lang, "kind": self.kind, "lines": len(self.lines),
+                "voice": self.conf.get("voice")}
+
+    def state(self):
+        with self.lock:
+            gm = self.guide_meta()
+            film = self.film()
+            return {"project": self.summary(), "chapters": self.chapters,
+                    "settings": {**self.settings, "denoise": self.nr_depth()}, "noise": self.noise_state(),
+                    "film": "/film" if film else None, "filmName": self.conf.get("film"),
+                    "guideVoice": self.conf.get("guide_voice"),
+                    "paths": {k: self.path(k) for k in ("takes", "export", "guide", "noise")},
+                    "todo": read_json(self.path("todo"), []),
+                    "lines": [self.line_state(ln, gm) for ln in self.lines]}
+
+    def kept_takes(self, ids=None):
+        """(take path, channel, trim) of the kept takes, in script order (or in the order of ids)."""
+        out = []
+        for lid in ids or [ln["id"] for ln in self.lines]:
+            n = self.sel.get(lid)
+            m = self.tk.get(lid, {}).get(n)
+            if m and m.get("status") == "ok":
+                out.append({"id": lid, "path": self.take_path(lid, n), "ch": m["ch"], "trim": m["trim"]})
+        return out

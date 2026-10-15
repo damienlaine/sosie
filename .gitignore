@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.egg-info/
+# recordings and voices never belong in the repository
+*.wav
+*.mp3
+*.flac

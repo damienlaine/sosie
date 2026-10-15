@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sosie</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='12' cy='16' r='9' fill='%2300c2a2'/%3E%3Ccircle cx='20' cy='16' r='9' fill='none' stroke='%2300c2a2' stroke-width='2.5'/%3E%3C/svg%3E" />
+<style>
+:root {
+  --bg: #0b0f13; --panel: #11171d; --panel2: #161e26; --line: #24303b; --ink: #e8eef3; --muted: #7d8a97; --dim: #46525e;
+  --teal: #00c2a2; --teal-d: #00705d; --red: #ef4444; --amber: #f5a524;
+  --font: system-ui, "Noto Sans", "Segoe UI", Roboto, sans-serif; --mono: "Noto Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); overflow: hidden; }
+body { display: grid; grid-template-rows: 52px minmax(0, 1fr); }
+button, select, input, textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--panel2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 10px; }
+button, select { cursor: pointer; }
+button:hover, select:hover { border-color: #3a4855; }
+button:disabled { opacity: .4; cursor: default; }
+button.primary { background: var(--teal); color: #03130f; font-weight: 700; border-color: var(--teal); }
+button.danger:hover { border-color: var(--red); color: #ff9b9b; }
+input[type=text], textarea { width: 100%; }
+input:focus, textarea:focus, select:focus { outline: 1px solid var(--teal-d); }
+kbd { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+a { color: var(--teal); }
+.muted { color: var(--muted); } .warn { color: var(--amber); } .err { color: #ff7b7b; }
+.spacer { flex: 1; }
+
+/* ---------- top bar */
+#top { display: flex; align-items: center; gap: 14px; padding: 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); white-space: nowrap; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 17px; letter-spacing: .02em; }
+.brand svg { width: 24px; height: 24px; }
+.tabs { display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+.tabs button { border: 0; background: none; border-radius: 7px; padding: 5px 14px; color: var(--muted); }
+.tabs button.on { background: var(--panel2); color: var(--ink); box-shadow: inset 0 -2px 0 var(--teal); }
+#projbtn { max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+#projbtn b { color: var(--teal); }
+#uilang { padding: 4px 6px; }
+.view { display: none; min-height: 0; }
+.view.on { display: grid; }
+
+/* ---------- studio */
+#view-studio { grid-template-rows: auto minmax(0, 1fr) auto; }
+#studiobar { display: flex; align-items: center; gap: 12px; padding: 7px 14px; background: var(--panel); border-bottom: 1px solid var(--line); white-space: nowrap; overflow-x: auto; }
+.seg { display: flex; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+.seg button { border: 0; background: none; border-radius: 7px; padding: 3px 11px; color: var(--muted); }
+.seg button.on { background: var(--teal); color: #03130f; font-weight: 700; }
+.opt { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+#dev { max-width: 200px; text-overflow: ellipsis; }
+.meter { display: grid; grid-template-columns: 14px 150px; align-items: center; gap: 3px 6px; font-size: 10px; color: var(--muted); }
+.mbar { position: relative; height: 7px; background: #1b232c; border-radius: 4px; overflow: hidden; }
+.mbar .zone { position: absolute; top: 0; bottom: 0; left: 70%; width: 20%; background: rgba(0,194,162,.12); }
+.mbar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #1f9e74 0, #1f9e74 105px, #e0b030 128px, #ef4444 150px); background-size: 150px 100%; }
+.mbar b { position: absolute; top: 0; bottom: 0; width: 2px; left: 0; background: #fff; opacity: .8; }
+.mrow.off { opacity: .35; }
+#mdb { font-family: var(--mono); font-size: 12px; width: 62px; text-align: right; color: var(--muted); }
+#clip { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; color: var(--dim); border: 1px solid var(--line); cursor: pointer; }
+#clip.on { color: #fff; background: var(--red); border-color: var(--red); }
+#prog { font-size: 13px; color: var(--muted); } #prog b { color: var(--teal); }
+#noisebtn.need { border-color: var(--teal); color: var(--teal); }
+
+#studio-main { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 0; }
+#nav { overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 6px 0 40px; }
+#nav h3 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); padding: 14px 14px 5px; }
+.ni { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 14px; font-size: 13px; cursor: pointer; color: var(--muted); }
+.ni:hover { background: #141b22; }
+.ni.cur { background: var(--panel2); color: var(--ink); box-shadow: inset 3px 0 0 var(--teal); }
+.ni .id { font-family: var(--mono); font-size: 11px; width: 70px; flex: none; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.ni .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ni .bd { flex: none; font-size: 11px; color: var(--dim); min-width: 22px; text-align: right; }
+.ni.voice .bd { color: var(--teal); font-weight: 700; }
+.ni.warn .bd { color: var(--amber); }
+#nav h3.todo-h { color: var(--amber); }
+.ni.todo { color: var(--ink); }
+.ni.todo .id { color: var(--amber); font-weight: 700; }
+
+#stage { position: relative; display: grid; min-height: 0; overflow: hidden; }
+#script { overflow-y: auto; padding: 18vh 40px 45vh; scroll-behavior: smooth; }
+#filmbox { position: relative; min-height: 0; display: flex; align-items: center; justify-content: center; }
+#filmbox video { width: 100%; height: 100%; max-height: 100%; object-fit: contain; background: #000; border-radius: 8px; }
+#filmtc { position: absolute; right: 10px; bottom: 8px; font-family: var(--mono); font-size: 11px; color: #fff; background: rgba(0,0,0,.55); padding: 1px 6px; border-radius: 4px; }
+#rythmo { position: relative; overflow: hidden; background: linear-gradient(#0f151b, #0b1015); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+#strip { position: absolute; left: 0; top: 0; bottom: 0; will-change: transform; }
+.rw { position: absolute; top: 48px; font-size: 42px; line-height: 60px; font-weight: 700; white-space: nowrap; transform-origin: 0 50%; color: var(--ink); }
+.rw.past { color: #3a4450; }
+.rw.now { color: var(--teal); text-shadow: 0 0 18px rgba(0,194,162,.45); }
+.rl { position: absolute; top: 114px; height: 4px; border-radius: 2px; background: rgba(0,194,162,.35); }
+#bar { position: absolute; top: 12px; bottom: 12px; left: 22%; width: 3px; margin-left: -1px; background: var(--teal); box-shadow: 0 0 12px var(--teal); border-radius: 2px; }
+#count { position: absolute; left: calc(22% + 12px); top: 10px; font-size: 13px; font-weight: 700; color: var(--red); }
+#curtext { overflow-y: auto; padding: 18px 40px; font-size: 24px; line-height: 1.55; color: #aab5c0; }
+#curtext p { max-width: 1200px; margin: 0 auto; }
+
+body.mode-texte #stage { grid-template-columns: minmax(0, 1fr) 440px; grid-template-areas: "script film"; }
+body.mode-texte #script { grid-area: script; }
+body.mode-texte #filmbox { grid-area: film; align-self: start; padding: 16px 16px 0 0; height: auto; }
+body.mode-texte #filmbox video { height: auto; aspect-ratio: 16 / 9; }
+body.mode-texte #rythmo, body.mode-texte #curtext { display: none; }
+body.mode-texte.nofilm #stage { grid-template-columns: minmax(0, 1fr); grid-template-areas: "script"; }
+body.mode-rythmo #stage { grid-template-rows: minmax(0, 1fr) 176px minmax(90px, auto); grid-template-areas: "film" "band" "cur"; }
+body.mode-rythmo #filmbox { grid-area: film; padding: 14px 14px 12px; }
+body.mode-rythmo #rythmo { grid-area: band; }
+body.mode-rythmo #curtext { grid-area: cur; max-height: 26vh; }
+body.mode-rythmo #script { display: none; }
+body.mode-rythmo.nofilm #stage { grid-template-rows: minmax(0, 1fr) 176px minmax(0, 1fr); grid-template-areas: "." "band" "cur"; }
+body.nofilm #filmbox { display: none; }
+
+.chap { max-width: 1000px; margin: 46px auto 12px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.shot { max-width: 1000px; margin: 0 auto 18px; padding: 10px 18px 12px 20px; border-radius: 12px; border-left: 4px solid transparent; color: #7f8b97; opacity: .6; cursor: pointer; transition: opacity .2s, background .2s; }
+.shot:hover { opacity: .85; }
+.shot .sh-h { display: flex; gap: 12px; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.shot .sh-h .sid { font-family: var(--mono); }
+.shot .sh-h .st { color: var(--teal); }
+.shot.todo .sid::after { content: attr(data-todo); color: var(--amber); }
+.shot p { font-size: 28px; line-height: 1.5; }
+.shot.cur { opacity: 1; color: var(--ink); background: var(--panel); border-left-color: var(--teal); }
+body.recording .shot.cur { border-left-color: var(--red); }
+.w.said { color: var(--muted); }
+.w.now { color: var(--teal); }
+.br { color: var(--teal-d); font-weight: 700; margin: 0 .1em; }
+
+.protocol { max-width: 1000px; margin: 0 auto 26px; padding: 16px 20px; border: 1px solid var(--teal-d); border-radius: 12px; background: #0e1a1a; font-size: 14px; line-height: 1.55; color: #c3ccd4; }
+.protocol h2 { font-size: 17px; color: var(--ink); margin-bottom: 6px; }
+.protocol ol { margin: 6px 0 10px 20px; }
+.protocol .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.protocol .ok { color: var(--teal); font-weight: 700; }
+
+#recbadge { display: none; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; background: var(--red); color: #fff; font-weight: 700; font-size: 14px; padding: 4px 14px; border-radius: 20px; font-variant-numeric: tabular-nums; }
+body.recording #recbadge { display: block; }
+body.recording #stage::after { content: ""; position: absolute; inset: 0; border: 3px solid var(--red); pointer-events: none; z-index: 4; }
+body.recording #bar { background: var(--red); box-shadow: 0 0 12px var(--red); }
+
+#studio-foot { background: var(--panel); border-top: 1px solid var(--line); padding: 8px 16px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 22px; }
+#info { grid-column: 1 / -1; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#info b { color: var(--ink); }
+#transport { display: grid; grid-template-columns: auto auto; gap: 8px 14px; align-items: center; }
+.recbtn { grid-row: span 2; width: 74px; height: 74px; border-radius: 50%; background: #241315; border: 3px solid var(--red); display: grid; place-items: center; padding: 0; }
+.recbtn i { width: 30px; height: 30px; border-radius: 50%; background: var(--red); transition: border-radius .15s; }
+body.recording .recbtn i { border-radius: 5px; width: 26px; height: 26px; }
+.tbtns { display: flex; gap: 6px; flex-wrap: wrap; max-width: 430px; }
+.tbtns button.on { border-color: var(--teal); color: var(--teal); }
+#takes { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; min-height: 170px; align-items: flex-start; }
+.empty { align-self: center; max-width: 360px; font-size: 14px; color: var(--muted); }
+.empty b { color: var(--ink); }
+.take { flex: 0 0 280px; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px 8px; display: flex; flex-direction: column; gap: 5px; }
+.take.sel { border-color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal); }
+.take.playing { background: #18262a; }
+.take .th { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.take .th .when { color: var(--dim); font-size: 12px; }
+.take .th .star { margin-left: auto; color: var(--teal); font-size: 12px; font-weight: 700; }
+.take canvas { width: 100%; height: 40px; display: block; cursor: pointer; }
+.take .ti { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.chip { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #1d2731; }
+.chip.good { color: #3fd6a8; } .chip.mid { color: var(--amber); } .chip.bad { color: #ff7b7b; }
+.take .heard { font-size: 12px; color: #aab5c0; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.take .tb { display: flex; gap: 6px; }
+.take .tb button { padding: 2px 9px; font-size: 12px; }
+.spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--dim); border-top-color: var(--teal); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#noproject { display: none; place-items: center; text-align: center; }
+#noproject .box { max-width: 520px; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+#noproject h1 { font-size: 26px; } #noproject p { color: var(--muted); line-height: 1.55; }
+body.noproj #view-studio.on { display: none; }
+body.noproj #noproject.on { display: grid; }
+
+/* ---------- pages (voices, synthesis) */
+.page { overflow-y: auto; padding: 24px 28px 60px; }
+.page-in { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.page h1 { font-size: 22px; display: flex; align-items: center; gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.card h2 { font-size: 15px; margin-bottom: 8px; }
+.help { font-size: 13px; line-height: 1.6; color: #b9c3cc; }
+.help h3 { font-size: 13px; color: var(--ink); margin: 10px 0 2px; }
+.help code { font-family: var(--mono); font-size: 12px; background: #1d2731; padding: 0 4px; border-radius: 4px; color: var(--ink); }
+.help ul, .help ol { margin-left: 20px; }
+details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+details[open] > summary { margin-bottom: 8px; }
+
+.vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.vcard { display: flex; flex-direction: column; gap: 9px; }
+.vcard .vh { display: flex; align-items: baseline; gap: 10px; }
+.vcard .vh b { font-size: 16px; }
+.vcard .vh .lang { font-family: var(--mono); font-size: 11px; color: var(--teal); border: 1px solid var(--teal-d); border-radius: 4px; padding: 0 5px; }
+.vcard .meta { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.vcard .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.vcard .btns button { font-size: 12px; padding: 3px 9px; }
+.vcard audio { width: 100%; height: 32px; }
+.sets { display: grid; grid-template-columns: 130px 1fr 52px; gap: 6px 10px; align-items: center; font-size: 13px; }
+.sets label { color: var(--muted); }
+.sets input[type=range] { width: 100%; accent-color: var(--teal); }
+.sets output { font-family: var(--mono); font-size: 12px; text-align: right; }
+.form { display: grid; grid-template-columns: 150px 1fr; gap: 9px 12px; align-items: center; font-size: 13px; }
+.form label { color: var(--muted); }
+.form textarea { min-height: 120px; resize: vertical; line-height: 1.45; }
+
+#synth-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
+#s-text { min-height: 190px; font-size: 17px; line-height: 1.5; resize: vertical; padding: 12px 14px; }
+.srow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+#s-go { font-size: 15px; padding: 8px 22px; }
+#s-status { font-size: 13px; color: var(--muted); }
+.clip { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); align-items: start; }
+.clip:last-child { border-bottom: 0; }
+.clip .pl { width: 38px; height: 38px; border-radius: 50%; padding: 0; font-size: 14px; grid-row: span 2; }
+.clip.playing .pl { background: var(--teal); color: #03130f; }
+.clip .ct { font-size: 14px; line-height: 1.4; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.clip .cm { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.clip .cm button { font-size: 12px; padding: 2px 8px; }
+.clip.new { animation: flash 1.2s ease-out; }
+@keyframes flash { from { background: rgba(0,194,162,.25); } to { background: transparent; } }
+.tagbtns { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.tagbtns button { font-family: var(--mono); font-size: 11px; padding: 1px 7px; }
+
+/* ---------- overlays */
+.ov { position: fixed; inset: 0; z-index: 20; display: none; place-items: center; background: rgba(5,8,11,.8); backdrop-filter: blur(3px); }
+.ov.on { display: grid; }
+.dlg { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px; width: min(760px, 94vw); max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.dlg h2 { font-size: 18px; display: flex; align-items: center; gap: 10px; }
+.dlg h2 .x { margin-left: auto; }
+.dlg .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.fsbox { border: 1px solid var(--line); border-radius: 9px; max-height: 260px; overflow-y: auto; font-size: 13px; }
+.fsbox .fe { padding: 4px 10px; cursor: pointer; display: flex; gap: 8px; }
+.fsbox .fe:hover { background: #141b22; }
+.fsbox .fe.proj { color: var(--teal); font-weight: 700; }
+.fsbox .fe.file { color: var(--muted); }
+.fsbox .fe.file.pick { color: var(--ink); background: var(--panel2); }
+.recent .fe { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+.recent .fe:hover { background: var(--panel2); }
+.recent .fe small { color: var(--dim); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; }
+.kv { display: grid; grid-template-columns: 160px 1fr; gap: 5px 12px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+#gate .box { max-width: 520px; text-align: center; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+#gate h1 { font-size: 26px; } #gate p { color: var(--muted); line-height: 1.5; }
+#gate button { font-size: 16px; padding: 12px 26px; }
+#noiseov .box { text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+#noiseov b { font-size: 30px; }
+#noiseov .n { font-size: 72px; font-weight: 700; color: var(--teal); font-variant-numeric: tabular-nums; }
+#noiseov p { color: var(--muted); }
+#help dl { display: grid; grid-template-columns: 130px 1fr; gap: 7px 14px; font-size: 14px; }
+#help dt { text-align: right; } #help dt kbd { font-size: 12px; color: var(--ink); }
+#help dd { color: #b9c3cc; }
+#scripted { min-height: 50vh; font-family: var(--mono); font-size: 13px; line-height: 1.5; }
+#toast { position: fixed; bottom: 200px; left: 50%; transform: translateX(-50%); z-index: 30; background: #1e2a33; border: 1px solid var(--line); padding: 8px 16px; border-radius: 9px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 80vw; }
+#toast.on { opacity: 1; }
+</style>
+</head>
+<body class="mode-texte noproj">
+<header id="top">
+  <div class="brand"><svg viewBox="0 0 32 32"><circle cx="12" cy="16" r="9" fill="#00c2a2"/><circle cx="20" cy="16" r="9" fill="none" stroke="#00c2a2" stroke-width="2.5"/></svg>Sosie</div>
+  <nav class="tabs" id="tabs">
+    <button data-v="studio" data-i18n="tab.studio"></button>
+    <button data-v="voices" data-i18n="tab.voices"></button>
+    <button data-v="synth" data-i18n="tab.synth"></button>
+  </nav>
+  <button id="projbtn"></button>
+  <div class="spacer"></div>
+  <span id="jobs" class="muted" style="font-size:12px"></span>
+  <select id="uilang" title="Interface"><option value="fr">FR</option><option value="en">EN</option></select>
+  <button id="helpbtn" title="?">?</button>
+</header>
+
+<!-- ======================================================= studio -->
+<section class="view" id="view-studio">
+  <div id="studiobar">
+    <div class="seg" id="mode"><button data-m="texte" data-i18n="st.full"></button><button data-m="rythmo" data-i18n="st.rythmo"></button></div>
+    <label class="opt"><input type="checkbox" id="filmon" /> <span data-i18n="st.picture"></span></label>
+    <label class="opt"><span data-i18n="st.preroll"></span> <select id="preroll"><option value="0">0 s</option><option value="1">1 s</option><option value="2">2 s</option><option value="3">3 s</option></select></label>
+    <div class="spacer"></div>
+    <select id="dev" data-i18n-title="st.mic"></select>
+    <select id="chan" data-i18n-title="st.chan.t"><option value="auto" data-i18n="st.chan.auto"></option><option value="0" data-i18n="st.chan.1"></option><option value="1" data-i18n="st.chan.2"></option></select>
+    <select id="denoise" data-i18n-title="st.nr.t"><option value="0" data-i18n="st.nr.0"></option><option value="8" data-i18n="st.nr.8"></option><option value="14" data-i18n="st.nr.14"></option><option value="20" data-i18n="st.nr.20"></option></select>
+    <button id="noisebtn" data-i18n="st.noise"></button>
+    <div class="meter">
+      <span class="mrow" id="ml0">1</span><div class="mbar mrow" id="m0"><div class="zone"></div><i></i><b></b></div>
+      <span class="mrow" id="ml1">2</span><div class="mbar mrow" id="m1"><div class="zone"></div><i></i><b></b></div>
+    </div>
+    <span id="mdb">−∞ dB</span>
+    <span id="clip" data-i18n-title="st.clip.t">CLIP</span>
+    <span id="prog"></span>
+  </div>
+  <div id="studio-main">
+    <div id="nav"></div>
+    <section id="stage">
+      <div id="recbadge">● REC <span id="rectime">0:00.0</span></div>
+      <div id="script"></div>
+      <div id="filmbox"><video id="film" preload="auto" playsinline muted></video><span id="filmtc"></span></div>
+      <div id="rythmo"><div id="strip"></div><div id="bar"></div><div id="count"></div></div>
+      <div id="curtext"></div>
+    </section>
+  </div>
+  <footer id="studio-foot">
+    <div id="info"></div>
+    <div id="transport">
+      <button class="recbtn" id="recbtn" data-i18n-title="st.rec.t"><i></i></button>
+      <div class="tbtns">
+        <button id="b-redo" data-i18n="st.redo" data-i18n-title="st.redo.t"></button>
+        <button id="b-take" data-i18n-title="st.take.t"><span data-i18n="st.take"></span><kbd>⏎</kbd></button>
+        <button id="b-film" data-i18n-title="st.film.t"><span data-i18n="st.film"></span><kbd>F</kbd></button>
+        <button id="b-guide" data-i18n-title="st.guide.t"><span data-i18n="st.guide"></span><kbd>G</kbd></button>
+      </div>
+      <div class="tbtns">
+        <button id="b-prev" data-i18n="st.prev"></button><button id="b-next" data-i18n="st.next"></button>
+        <button id="b-synth" data-i18n="st.useguide" data-i18n-title="st.useguide.t"></button>
+      </div>
+    </div>
+    <div id="takes"></div>
+  </footer>
+</section>
+<section class="view" id="noproject"><div class="box">
+  <h1 data-i18n="np.title"></h1>
+  <p data-i18n="np.text"></p>
+  <div class="row"><button class="primary" id="np-open" data-i18n="np.open"></button></div>
+</div></section>
+
+<!-- ======================================================= voices -->
+<section class="view page" id="view-voices"><div class="page-in">
+  <h1><span data-i18n="vo.title"></span><span class="spacer"></span><button class="primary" id="v-new" data-i18n="vo.new"></button></h1>
+  <div class="vgrid" id="vgrid"></div>
+  <details class="card help" id="v-protocol"><summary data-i18n="vo.protocol"></summary><div data-i18n-html="vo.protocol.html"></div></details>
+</div></section>
+
+<!-- ======================================================= synthesis -->
+<section class="view page" id="view-synth"><div class="page-in">
+  <div id="synth-grid">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="srow">
+        <label class="muted" data-i18n="sy.voice"></label><select id="s-voice"></select>
+        <label class="muted" data-i18n="sy.lang"></label><select id="s-lang"></select>
+        <span class="spacer"></span>
+        <span id="s-count" class="muted"></span>
+      </div>
+      <textarea id="s-text" data-i18n-placeholder="sy.ph"></textarea>
+      <div class="srow">
+        <button class="primary" id="s-go"><span data-i18n="sy.go"></span><kbd style="color:#03130f;border-color:#03130f55">Ctrl ⏎</kbd></button>
+        <label class="opt"><input type="checkbox" id="s-check" checked /> <span data-i18n="sy.check"></span></label>
+        <label class="opt"><span data-i18n="sy.tries"></span> <select id="s-tries"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+        <span id="s-status"></span>
+      </div>
+      <details class="card" id="s-adv">
+        <summary data-i18n="sy.adv"></summary>
+        <div class="sets" id="s-sets"></div>
+        <div class="srow" style="margin-top:8px"><button id="s-reset" data-i18n="sy.reset"></button><button id="s-savevoice" data-i18n="sy.savevoice"></button></div>
+      </details>
+      <details class="card help" id="s-help"><summary data-i18n="sy.help"></summary><div data-i18n-html="sy.help.html"></div>
+        <div class="tagbtns" id="s-tags"></div>
+      </details>
+    </div>
+    <div class="card" style="padding:0">
+      <div class="srow" style="padding:10px 12px;border-bottom:1px solid var(--line)"><b data-i18n="sy.clips"></b><span class="spacer"></span><span class="muted" id="s-clipsdir" style="font-size:11px"></span></div>
+      <div id="s-clips"></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ======================================================= overlays -->
+<div class="ov" id="gate"><div class="box">
+  <h1 data-i18n="gate.title"></h1>
+  <p data-i18n="gate.text"></p>
+  <button class="primary" id="gatebtn" data-i18n="gate.btn"></button>
+  <p class="err" id="gateerr"></p>
+</div></div>
+
+<div class="ov" id="noiseov"><div class="box">
+  <b data-i18n="noise.title"></b>
+  <div class="n" id="noisecount">10</div>
+  <p data-i18n-html="noise.text"></p>
+</div></div>
+
+<div class="ov" id="projdlg"><div class="dlg">
+  <h2><span data-i18n="pj.title"></span><button class="x" data-close>✕</button></h2>
+  <div id="pj-current"></div>
+  <div><h3 class="muted" style="font-size:12px;margin-bottom:4px" data-i18n="pj.recent"></h3><div class="recent" id="pj-recent"></div></div>
+  <details id="pj-newbox"><summary data-i18n="pj.new"></summary>
+    <div class="form" style="margin-top:10px">
+      <label data-i18n="pj.name"></label><input type="text" id="pj-name" />
+      <label data-i18n="pj.lang"></label><select id="pj-lang"></select>
+      <label data-i18n="pj.dir"></label><input type="text" id="pj-dir" placeholder="~/sosie/mon-projet" />
+      <label data-i18n="pj.script"></label><textarea id="pj-script" data-i18n-placeholder="pj.script.ph"></textarea>
+      <label data-i18n="pj.film"></label><input type="text" id="pj-film" data-i18n-placeholder="pj.film.ph" />
+      <span></span><div class="row"><button class="primary" id="pj-create" data-i18n="pj.create"></button><span class="err" id="pj-err"></span></div>
+    </div>
+  </details>
+  <details id="pj-openbox"><summary data-i18n="pj.browse"></summary>
+    <div class="row" style="margin:8px 0"><button id="fs-up">↑</button><input type="text" id="fs-dir" style="flex:1" /><button id="fs-open" class="primary" data-i18n="pj.openhere"></button></div>
+    <div class="fsbox" id="fs-list"></div>
+    <p class="muted" style="font-size:12px;margin-top:6px" data-i18n="pj.browse.hint"></p>
+  </details>
+</div></div>
+
+<div class="ov" id="scriptdlg"><div class="dlg" style="width:min(1000px,96vw)">
+  <h2><span data-i18n="sc.title"></span><button class="x" data-close>✕</button></h2>
+  <p class="muted" style="font-size:13px" data-i18n="sc.hint"></p>
+  <textarea id="scripted" spellcheck="false"></textarea>
+  <div class="row"><button class="primary" id="sc-save" data-i18n="sc.save"></button><span class="err" id="sc-err"></span></div>
+</div></div>
+
+<div class="ov" id="newvoice"><div class="dlg">
+  <h2><span data-i18n="nv.title"></span><button class="x" data-close>✕</button></h2>
+  <div class="form">
+    <label data-i18n="nv.name"></label><input type="text" id="nv-name" />
+    <label data-i18n="nv.lang"></label><select id="nv-lang"></select>
+    <label data-i18n="nv.prompts"></label><textarea id="nv-prompts" style="min-height:220px"></textarea>
+    <span></span><p class="muted" style="font-size:12px" data-i18n="nv.hint"></p>
+    <span></span><div class="row"><button class="primary" id="nv-create" data-i18n="nv.create"></button><span class="err" id="nv-err"></span></div>
+  </div>
+</div></div>
+
+<div class="ov" id="help"><div class="dlg">
+  <h2><span data-i18n="help.title"></span><button class="x" data-close>✕</button></h2>
+  <dl data-i18n-html="help.keys"></dl>
+  <div class="help" data-i18n-html="help.text"></div>
+</div></div>
+
+<div id="toast"></div>
+<audio id="player" preload="auto"></audio>
+<input type="file" id="filepick" accept="audio/*,video/*" style="display:none" />
+<script src="/static/i18n.js"></script>
+<script src="/static/app.js"></script>
+<script src="/static/voices.js"></script>
+<script src="/static/synth.js"></script>
+</body>
+</html>
