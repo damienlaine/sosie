@@ -32,6 +32,7 @@ from .text import tokens, words_to_tokens
 from .util import home, log, read_json, stamp, write_json
 
 ID = re.compile(r"[\w-]+")
+TAKE_SRC = ("voix", "take", "synth")   # export entries made from a take (not from the imported synthesis)
 NR_LEVELS = (0, 8, 14, 20)      # dB: maximum background-noise reduction (none, light, normal, strong)
 DEFAULT_PATHS = {"takes": "takes", "trash": "trash", "noise": "noise.wav", "todo": "todo.json", "guide": "guide",
                  "export": "export", "timing": "timing.json", "guide_words": "guide-words.json"}
@@ -265,7 +266,9 @@ class Project:
         return d if d in NR_LEVELS else 14
 
     def export(self, lid):
-        """Puts the kept take of the line (or, failing that, the guide voice) in the export folder."""
+        """Puts the kept take of the line (or, failing that, the imported synthesis) in the export folder.
+        A microphone take is trimmed, denoised, compressed gently and levelled; a synthetic take is only levelled.
+        Both are sped up or slowed down by their tempo (WSOLA), word timings included."""
         exp = self.path("export")
         os.makedirs(exp, exist_ok=True)
         with self.lock:
@@ -275,7 +278,7 @@ class Project:
             meta, words = read_json(dpath, {}), read_json(wpath, {})
             out = os.path.join(exp, lid + ".wav")
             if m is None:
-                if meta.get(lid, {}).get("src") in ("voix", "take"):
+                if meta.get(lid, {}).get("src") in TAKE_SRC:
                     gmeta = self.guide_meta().get(lid)
                     gwav = os.path.join(self.path("guide"), lid + ".wav")
                     if gmeta and os.path.exists(gwav) and os.path.realpath(gwav) != os.path.realpath(out):
@@ -286,7 +289,7 @@ class Project:
                             words[lid] = gw
                         else:
                             words.pop(lid, None)
-                        log(f"{lid}: back to the guide voice")
+                        log(f"{lid}: back to the imported synthesis")
                     else:
                         meta.pop(lid, None)
                         words.pop(lid, None)
@@ -298,24 +301,30 @@ class Project:
             if m.get("status") != "ok":
                 return                                 # exported at the end of the analysis
             a, b = m["trim"]
-            d = b - a
+            f = float(m.get("tempo", 1.0))
+            tempo = f"atempo={f}," if abs(f - 1) > 1e-3 else ""
+            d = (b - a) / f
             tmp = [os.path.join(exp, f".export-{k}.wav") for k in range(4)]
             src, ch, nr = self.take_path(lid, n), m["ch"], None
-            depth = self.nr_depth()
             target = float(self.conf.get("export", {}).get("lufs", -20.0))
+            synth = m.get("kind") == "synth"
+            depth = 0 if synth else self.nr_depth()
             if depth:
                 x, sr = audio.read_wav(src)
                 y, nr = audio.denoise(x[:, ch], sr, self.path("noise"), (0.3, a - 0.25), depth)
                 if nr is not None:
                     audio.write_wav24(tmp[0], y[:, None], sr)
                     src, ch = tmp[0], 0
-            audio.ffmpeg("-i", src, "-af",
-                         f"pan=mono|c0=c{ch},atrim={a}:{b},asetpts=PTS-STARTPTS,highpass=f=70,"
-                         f"afade=t=in:d=0.02,afade=t=out:st={max(0.0, d - 0.08):.3f}:d=0.08", "-c:a", "pcm_f32le", tmp[1])
-            i1, _ = audio.loudness(tmp[1])
-            g1 = target - i1 if i1 > -70 else 0.0
-            audio.ffmpeg("-i", tmp[1], "-af", f"volume={g1:.2f}dB,acompressor=threshold=0.126:ratio=2:attack=10:release=150",
-                         "-c:a", "pcm_f32le", tmp[2])
+            if synth:                                  # already trimmed and clean: tempo, then level
+                audio.ffmpeg("-i", src, "-af", f"pan=mono|c0=c{ch},{tempo}anull", "-c:a", "pcm_f32le", tmp[2])
+            else:
+                audio.ffmpeg("-i", src, "-af",
+                             f"pan=mono|c0=c{ch},atrim={a}:{b},asetpts=PTS-STARTPTS,{tempo}highpass=f=70,"
+                             f"afade=t=in:d=0.02,afade=t=out:st={max(0.0, d - 0.08):.3f}:d=0.08", "-c:a", "pcm_f32le", tmp[1])
+                i1, _ = audio.loudness(tmp[1])
+                g1 = target - i1 if i1 > -70 else 0.0
+                audio.ffmpeg("-i", tmp[1], "-af", f"volume={g1:.2f}dB,acompressor=threshold=0.126:ratio=2:attack=10:release=150",
+                             "-c:a", "pcm_f32le", tmp[2])
             i2, p2 = audio.loudness(tmp[2])
             g2 = min(target - i2 if i2 > -70 else 0.0, -1.5 - p2)
             audio.ffmpeg("-i", tmp[2], "-af", f"volume={g2:.2f}dB", "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", tmp[3])
@@ -324,13 +333,62 @@ class Project:
                 if os.path.exists(t):
                     os.remove(t)
             dur = audio.wav_duration(out)
-            meta[lid] = {"text": self.byid[lid]["text"], "dur": round(dur, 2), "src": self.conf.get("export", {}).get("src", "take"),
-                         "take": n, "denoise": depth if nr is not None else 0, "at": time.strftime("%H%M%S")}
-            words[lid] = [{"t": w["t"], "s": round(max(0.0, w["s"] - a), 3), "e": round(max(0.0, w["e"] - a), 3)}
+            meta[lid] = {"text": self.byid[lid]["text"], "dur": round(dur, 2),
+                         "src": "synth" if synth else self.conf.get("export", {}).get("src", "take"),
+                         "take": n, "denoise": depth if nr is not None else 0, "at": time.strftime("%H%M%S"),
+                         **({"voice": m.get("voice")} if synth else {}), **({"tempo": f} if tempo else {})}
+            words[lid] = [{"t": w["t"], "s": round(max(0.0, w["s"] - a) / f, 3), "e": round(max(0.0, w["e"] - a) / f, 3)}
                           for w in m["heard"]]
             write_json(dpath, meta)
             write_json(wpath, words)
-            log(f"{lid}: take {n} exported ({dur:.2f} s" + (f", denoised -{depth} dB, profile {nr:+.1f} dB)" if nr is not None else ")"))
+            log(f"{lid}: {'synthetic ' if synth else ''}take {n} exported ({dur:.2f} s" + (f", tempo ×{f}" if tempo else "")
+                + (f", denoised -{depth} dB, profile {nr:+.1f} dB)" if nr is not None else ")"))
+
+    def set_tempo(self, lid, n, f):
+        """Speeds the take up (f > 1, shorter) or slows it down (f < 1, longer) in the export, pitch unchanged."""
+        with self.lock:
+            m = self.tk.get(lid, {}).get(n)
+            if not m:
+                raise LookupError("unknown take")
+            m["tempo"] = round(min(1.4, max(0.7, float(f))), 3)
+            if abs(m["tempo"] - 1) < 1e-3:
+                m.pop("tempo")
+            self.save_meta(lid, n)
+            if self.sel.get(lid) == n:
+                self.export(lid)
+            return m
+
+    def new_synth_take(self, lid, res, vid, voice_name):
+        """A take made by the synthesis (tts.Engine.speak result): saved and listed like a microphone take.
+        It is kept for the track only if the line has no kept take yet. Returns (metadata, kept)."""
+        y = np.asarray(res["y"], np.float64)
+        sr = 48000
+        with self.lock:
+            os.makedirs(os.path.join(self.path("takes"), lid), exist_ok=True)
+            n = self.next_n(lid)
+            audio.write_wav24(self.take_path(lid, n), y[:, None], sr)
+            dur = round(len(y) / sr, 3)
+            peak = float(np.abs(y).max()) if len(y) else 0.0
+            text = self.byid[lid]["text"]
+            m = {"n": n, "file": f"t{n:02d}.wav", "created": stamp(), "text": text, "status": "ok", "kind": "synth",
+                 "voice": vid, "voiceName": voice_name, "settings": {k: res["settings"].get(k) for k in
+                 ("exaggeration", "cfg_weight", "temperature", "decoder_seconds", "tempo")},
+                 "ch": 0, "channels": 1, "sr": sr, "dur": dur, "trim": [0.0, dur], "peaks": audio.peaks(y),
+                 "peak_db": round(20 * np.log10(peak + 1e-9), 1), "clips": 0,
+                 "heard": [{"t": w["t"], "s": w["s"], "e": w["e"]} for w in res["words"]], "asr": text,
+                 "worst": max((r["bad"] for r in res["report"]), default=0), "report": res["report"]}
+            self.tk.setdefault(lid, {})[n] = m
+            self.save_meta(lid, n)
+            kept = self.sel.get(lid) not in self.tk.get(lid, {})
+            if kept:
+                self.sel[lid] = n
+                self.save_sel()
+                self.export(lid)
+        log(f"{lid}: synthetic take {n} ({voice_name}, {dur:.1f} s)" + (", kept" if kept else ""))
+        return m, kept
+
+    def lexicon(self):
+        return read_json(self.p("lexicon.json"), None)
 
     def export_all(self):
         """After a change of denoising or noise profile: every kept take again (the lock is released in between)."""
@@ -343,7 +401,7 @@ class Project:
     def export_version(self, lid):
         """Version of the exported file (to listen to the processed take), if it is a real take."""
         m = read_json(os.path.join(self.path("export"), "durations.json"), {}).get(lid, {})
-        return f'{m.get("take")}-{m.get("denoise")}-{m.get("at")}' if m.get("src") in ("voix", "take") else None
+        return f'{m.get("take")}-{m.get("denoise")}-{m.get("at")}' if m.get("src") in TAKE_SRC else None
 
     # ------------------------------------------------------------ noise profile and settings
     def save_noise(self, body):
@@ -396,7 +454,9 @@ class Project:
         lid = ln["id"]
         gm = (self.guide_meta() if gmeta is None else gmeta).get(lid, {})
         gw = self.gw.get(lid)
-        return {**ln, "tok": tokens(ln["text"]), "film": self.timing.get(lid),
+        tm = self.timing.get(lid)
+        return {**ln, "tok": tokens(ln["text"]), "film": tm,
+                "slot": round(tm["start"] + tm["dur"] - tm["vo"], 2) if tm and "vo" in tm else None,
                 "gdur": gm.get("dur"), "gtext": gm.get("text"),
                 "guide": gw["words"] if gw and gw["text"] == gm.get("text") == ln["text"] else None,
                 "takes": [self.tk[lid][n] for n in sorted(self.tk.get(lid, {}))], "sel": self.sel.get(lid),

@@ -96,19 +96,22 @@ class App:
             return clips.add(res, text, vid, name)
         return self.submit("clip", run, voice=vid, text=text[:120])
 
-    def synth_guide(self, vid):
+    def synth_takes(self, vid, ids, settings=None, tries=3):
+        """Synthetic takes of these lines of the open project, one after the other (one job)."""
         p = self.need()
+        name = voices.conf(vid).get("name", vid)
 
         def run(progress):
-            out = p.path("guide")
-            tts.render(p, vid, out, tries=3, engine=self.engine, log_fn=log,
-                       progress=lambda i, n, lid: progress(line=i + 1, lines=n, id=lid))
-            p.conf["guide_voice"] = vid
-            p.save_conf()
-            for ln in p.lines:
-                p.work.put(1, p.guide_words, ln["id"])
-            return {"guide": out}
-        return self.submit("guide", run, voice=vid, project=p.dir)
+            done = []
+            for i, lid in enumerate(ids):
+                progress(line=i + 1, lines=len(ids), id=lid)
+                res = self.engine.speak(p.byid[lid]["text"], vid, lang=p.lang, settings=settings, tries=tries, lexicon=p.lexicon(),
+                                        progress=lambda s, n, k, t: progress(line=i + 1, lines=len(ids), id=lid,
+                                                                             sentence=s + 1, sentences=n, draw=k + 1, draws=t))
+                m, kept = p.new_synth_take(lid, res, vid, name)
+                done.append({"id": lid, "n": m["n"], "kept": kept, "worst": m["worst"]})
+            return {"takes": done}
+        return self.submit("synth-takes", run, voice=vid, project=p.dir, ids=ids)
 
 
 APP = None
@@ -333,10 +336,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"path": clips.save_as(m[1], js().get("dest") or "~")})
         # the open project
         pr = A.need()
-        if p == "/api/guide":
+        if p == "/api/synthtakes":
+            # {"voice", "ids": [...]} or {"voice", "missing": true} (every line without a kept take)
             if not tts.available():
                 raise RuntimeError("synthesis not installed: pip install 'sosie[voice]'")
-            return self.send_json(A.synth_guide(js()["voice"]))
+            d = js()
+            ids = [i for i in d.get("ids") or [] if i in pr.byid]
+            if d.get("missing"):
+                ids = [ln["id"] for ln in pr.lines if pr.sel.get(ln["id"]) not in pr.tk.get(ln["id"], {})]
+            elif d.get("all"):
+                ids = [ln["id"] for ln in pr.lines]
+            if not ids:
+                raise ValueError("no line to synthesise")
+            return self.send_json(A.synth_takes(d["voice"], ids, d.get("settings"), int(d.get("tries", 3))))
+        if (m := re.fullmatch(r"/api/tempo/([\w-]+)/(\d+)", p)) and m[1] in pr.byid:
+            pr.set_tempo(m[1], int(m[2]), float(js()["tempo"]))
+            with pr.lock:
+                return self.send_json(pr.line_state(pr.byid[m[1]]))
         if p == "/api/script":
             chapters, _ = scripts.parse(js()["text"], "txt")
             if not any(ch["lines"] for ch in chapters):

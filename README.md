@@ -4,7 +4,7 @@
 
 Sosie grew out of the production of a product launch film: a voice-over studio built to record a 70-line script against the picture, then a cloned voice to fill the gaps and make the English version. Everything that worked is kept here, with the settings that were judged by ear.
 
-- **Studio**: the script is cut into lines; each line is recorded in as many takes as needed, as full text or on a **rythmo band** (the dubbing band that scrolls with the picture). Whisper tells you what you actually said, word by word. The kept take goes straight to a voice track for the edit: trimmed, denoised against a recorded noise profile, levelled to −20 LUFS, with word timings.
+- **Studio**: the script is cut into lines; each line gets as many takes as needed, recorded at the microphone (🎙) or generated with a library voice (✦ synthetic take), as full text or on a **rythmo band** (the dubbing band that scrolls with the picture). The band takes its rhythm from the source you pick: the kept take (the words and timings Whisper heard), the synthetic take, an imported synthesis, the shot's duration, or an average pace. Whisper tells you what you actually said, word by word. The kept take goes straight to a voice track for the edit: trimmed, denoised against a recorded noise profile, levelled to −20 LUFS, made shorter or longer if needed (or fitted to the shot) without changing the pitch, with word timings.
 - **Voices**: a library of cloned voices. A guided protocol records the samples (ten sentences to read, a noise profile, levels), and builds the 30-second reference the clone imitates. You can also import a recording, or build a voice from the kept takes of a project.
 - **Synthesis**: type a text, pick a voice, get a clip. Each sentence is drawn several times and checked by Whisper; the best draw is kept. Download the WAV, copy it to the clipboard, or drag it out of the page.
 - **Projects**: plain folders, saved as you go. Import a script as text or Markdown (one paragraph per line), SRT subtitles (with their timings: dubbing on a video), or JSON.
@@ -44,7 +44,7 @@ sosie voice list | add NAME --lang fr [--ref sample.wav] | import ID file.wav | 
   takes/<id>/tNN.wav + .json    every take (24-bit) and its analysis
   selection.json                the kept take of each line
   noise.wav                     the background noise profile
-  guide/                        optional guide voice: the rythmo band's timing, and the fallback for lines without a take
+  guide/                        optional imported synthesis: a rythmo band source, and the fallback for lines without a kept take
   export/                       the voice track: <id>.wav (48 kHz 16-bit, −20 LUFS), durations.json, words.json
   lexicon.json                  optional pronunciation rules {"rules": [[regex, replacement]], "spell": ["API", …]}
 ~/.local/share/sosie/           ($SOSIE_HOME)

@@ -4,6 +4,34 @@
 const I18N = { lang: "fr" };
 I18N.fr = {
   "tab.studio": "Studio", "tab.voices": "Voix", "tab.synth": "Synthèse",
+  // studio tools (synthetic take, rythmo band, duration)
+  "st.export": "▶ Exportée", "st.export.t": "Écouter la prise retenue telle qu'elle part dans la piste : coupée, débruitée, à niveau, à son tempo",
+  "tl.synth": "✦ Synthèse", "tl.synth.t": "Faire dire la réplique par une voix de la bibliothèque : une prise de synthèse s'ajoute aux prises",
+  "tl.gen": "Générer une prise", "tl.gen.t": "Prise de synthèse de cette réplique avec la voix choisie (S)",
+  "tl.band": "Bande rythmo", "tl.band.t": "D'où la bande rythmo tire son rythme : ce qu'elle fait défiler, et quand",
+  "tl.listen": "▶ Écouter",
+  "tl.dur": "Durée", "tl.dur.t": "Durée de la prise retenue dans la piste : accélérée ou ralentie sans changer la hauteur (WSOLA)",
+  "tl.shorter.t": "Raccourcir de 2 % (plus rapide)", "tl.longer.t": "Allonger de 2 % (plus lent)",
+  "tl.reset": "×1", "tl.reset.t": "Revenir à la durée d'origine",
+  "tl.fitslot": "= plan {s} s", "tl.fitsynth": "= synthèse {s} s", "tl.fitguide": "= synthèse importée {s} s",
+  "tl.novoice": "aucune voix prête (onglet Voix)", "tl.nokept": "aucune prise retenue",
+  "tl.gen.kept": "Prise de synthèse {n} : retenue pour la piste", "tl.gen.added": "Prise de synthèse {n} ajoutée (★ pour la retenir à la place de la prise actuelle)",
+  "tl.tempo.set": "Prise calée à {s} s (×{f})", "tl.tempo.far": "Prise calée à {s} s (×{f}) : au-delà de ±20 %, écoutez, la voix peut se dégrader",
+  "tl.tempo.reset": "Prise à sa durée d'origine",
+  "src.auto": "Auto · {x}", "src.take": "Prise retenue {n} · {s} s (temps Whisper)", "src.takesynth": "Prise retenue {n} (synthèse) · {s} s", "src.synth": "Synthèse {v} · {s} s",
+  "src.guide": "Synthèse importée · {s} s", "src.slot": "Durée du plan · {s} s", "src.pace": "Débit moyen · {s} s",
+  "tk.mic": "micro", "tk.unkeep.t": "Ne plus retenir cette prise (deux clics)", "tk.unkeep.guide": "Cliquez encore pour ne plus retenir cette prise : la piste reprendra la synthèse importée", "tk.unkeep.empty": "Cliquez encore pour ne plus retenir cette prise : la réplique sera vide dans la piste", "tk.relisten": "à réécouter", "tk.checked": "vérifiée",
+  "tk.tempo.t": "Tempo appliqué dans la piste", "tk.synthnew": "Prise de synthèse",
+  "tk.unkept": "Plus aucune prise retenue : la réplique est vide dans la piste", "tk.unkept.guide": "Plus aucune prise retenue : la piste reprend la synthèse importée",
+  "st.slot": "plan {s} s", "st.keptmic": "prise {n} (micro) {s} s", "st.keptsynth": "prise {n} (synthèse) {s} s",
+  "st.nokept": "aucune prise retenue", "st.nokept.guide": "aucune prise retenue : synthèse importée dans la piste",
+  "st.keepone": "Aucune prise retenue.<br/>Retenez-en une avec ★ ou <b>1…9</b>.",
+  "st.notake": "Aucune prise. <b>Espace</b> pour enregistrer, <b>S</b> pour une prise de synthèse.",
+  "st.guideold": "texte modifié depuis la synthèse importée : rythme estimé",
+  "pj.k.guide": "Synthèse importée",
+  "pj.synth": "Prises de synthèse :", "pj.synth.missing": "pour les répliques sans prise retenue", "pj.synth.all": "pour toutes les répliques",
+  "pj.synth.go": "Générer", "pj.synth.hint": "Une prise de synthèse s'ajoute à chaque réplique ; elle n'est retenue que si la réplique n'en a pas d'autre.",
+  "pj.synth.started": "{n} prises de synthèse en cours, réplique par réplique", "pj.synth.done": "{n} prises de synthèse faites, {k} retenues",
   "jobs.running": "{n} génération(s) en cours", err: "Erreur : {e}",
   // projects
   "pj.proj": "Projet", "pj.voiceproj": "Échantillons de", "pj.none": "Aucun projet", "pj.title": "Projet",
@@ -12,14 +40,13 @@ I18N.fr = {
   "pj.name": "Nom", "pj.lang": "Langue", "pj.dir": "Dossier du projet", "pj.script": "Script",
   "pj.script.ph": "Collez le texte : un paragraphe par réplique, « # Titre » pour un chapitre, « [ID] texte » pour nommer une réplique. Ou choisissez un fichier .txt, .md, .srt ou .json ci-dessous.",
   "pj.script.file": "Fichier choisi : {f}", "pj.film": "Vidéo de référence",
-  "pj.film.ph": "Facultatif : l'image sous la bande rythmo (un .srt donne aussi le minutage)",
+  "pj.film.ph": "Facultatif : l'image sous la bande rythmo (un .srt donne aussi la durée de chaque plan)",
   "pj.create": "Créer le projet", "pj.browse": "Parcourir les dossiers", "pj.openhere": "Ouvrir ce projet",
   "pj.browse.hint": "◉ = projet Sosie (cliquer pour l'ouvrir). Cliquer un script ou une vidéo le met dans « Nouveau projet ».",
   "pj.k.dir": "Dossier", "pj.k.lang": "Langue", "pj.k.lines": "Répliques", "pj.k.recorded": "en voix réelle",
-  "pj.k.export": "Piste voix (montage)", "pj.k.takes": "Prises", "pj.k.guide": "Guide", "pj.k.film": "Vidéo",
-  "pj.edit": "Modifier le script", "pj.guidegen": "Guide :", "pj.guidego": "Générer avec cette voix", "pj.close": "Fermer le projet",
+  "pj.k.export": "Piste voix (montage)", "pj.k.takes": "Prises", "pj.k.film": "Vidéo",
+  "pj.edit": "Modifier le script", "pj.close": "Fermer le projet",
   "pj.err.open": "Impossible d'ouvrir le projet : {e}", "pj.err.dir": "Indiquez le dossier du projet",
-  "pj.guide.started": "Génération du guide lancée (réplique par réplique, déjà faites sautées)", "pj.guide.done": "Guide prêt",
   "sc.title": "Script", "sc.hint": "Un paragraphe par réplique. « # Titre » commence un chapitre, « [ID] » en tête nomme la réplique (gardez les ID : les prises y sont rattachées). L'ancien script est gardé dans script.json.bak.",
   "sc.save": "Enregistrer le script", "sc.saved": "Script enregistré",
   "np.title": "Aucun projet ouvert", "np.text": "Un projet, c'est un script découpé en répliques, les prises enregistrées pour chacune, et la piste voix exportée pour le montage. Tout est sauvegardé au fil de l'eau dans son dossier.",
@@ -32,20 +59,14 @@ I18N.fr = {
   "st.noise": "Profil de bruit", "st.clip.t": "Saturation (cliquer pour effacer)",
   "st.rec.t": "Enregistrer / arrêter (Espace)", "st.redo": "⌫ Refaire", "st.redo.t": "Jeter la dernière prise et recommencer",
   "st.take": "▶ Prise", "st.take.t": "Écouter la prise retenue", "st.film": "▶ Sur l'image", "st.film.t": "Écouter la prise retenue sur l'image",
-  "st.guide": "▶ Guide", "st.guide.t": "Écouter le guide (la voix de synthèse, sur l'image s'il y en a une)",
-  "st.prev": "◀ Réplique", "st.next": "Réplique ▶", "st.useguide": "Guide au montage", "st.useguide.t": "Revenir à la voix guide pour cette réplique",
+  "st.prev": "◀ Réplique", "st.next": "Réplique ▶",
   "st.mic.on": "Micro : {d}", "st.mic.err": "Micro inaccessible : {e}",
-  "st.tooshort": "Prise trop courte, ignorée", "st.upload.err": "Envoi de la prise impossible : {e}", "st.discarded": "Prise {n} jetée",
-  "st.useguide.done": "Voix guide retenue pour cette réplique", "st.kept": "Prise {n} retenue",
-  "st.noguide": "Pas de guide pour cette réplique (Projet ▸ Guide : le générer avec une voix)",
+  "st.tooshort": "Prise trop courte, ignorée", "st.upload.err": "Envoi de la prise impossible : {e}", "st.discarded": "Prise {n} jetée", "st.kept": "Prise {n} retenue",
   "st.noexport": "Pas encore de prise exportée pour cette réplique",
   "st.todo": "À enregistrer · {n}", "st.todo1": "à enregistrer", "st.noline": "Ce script n'a aucune réplique.",
-  "st.realvoice": "voix réelle · prise {n} {of}", "st.ntakes": "{n} prise(s)", "st.line": "Réplique {i}/{n}",
-  "st.infilm": "dans la vidéo à {t}", "st.guidedur": "guide {s} s", "st.realdur": "voix réelle {s} s",
-  "st.guideold": "texte modifié depuis le guide : rythme estimé",
-  "st.prog": "<b>{n}</b>/{of} en voix réelle {d}",
-  "st.notake": "Aucune prise. <b>Espace</b> pour enregistrer.", "st.notake.guide": "La piste utilise la voix guide ({s} s).",
-  "st.usingguide": "La piste utilise la <b>voix guide</b>.<br/>Retenez une prise avec ★ ou <b>1…9</b>.",
+  "st.status.mic": "prise {n} retenue (micro)", "st.status.synth": "prise {n} retenue (synthèse {v})", "st.ntakes": "{n} prise(s)", "st.line": "Réplique {i}/{n}",
+  "st.infilm": "dans la vidéo à {t}",
+  "st.prog": "<b>{n}</b>/{of} en voix réelle", "st.prog.synth": "<b>{k}</b> en synthèse",
   "st.nr.done": "Débruitage -{db} dB max : prises retenues refaites", "st.nr.off": "Sans débruitage : prises retenues refaites",
   "st.chan.autodone": "Canal choisi d'après le niveau, à chaque prise", "st.chan.done": "Seule l'entrée {n} est gardée",
   "st.film.err": "Vidéo illisible : guide sans image",
@@ -130,19 +151,49 @@ I18N.fr = {
     <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Réplique précédente / suivante (aussi <kbd>↑</kbd> <kbd>↓</kbd>).</dd>
     <dt><kbd>⏎</kbd></dt><dd>Écouter la prise retenue ; ce que vous avez dit défile dans la bande.</dd>
     <dt><kbd>F</kbd></dt><dd>Écouter la prise retenue sur l'image.</dd>
-    <dt><kbd>T</kbd></dt><dd>Écouter la prise telle qu'elle est exportée (coupée, débruitée, mise à niveau).</dd>
-    <dt><kbd>G</kbd></dt><dd>Écouter le guide.</dd>
+    <dt><kbd>T</kbd></dt><dd>Écouter la prise telle qu'elle part dans la piste (coupée, débruitée, à niveau, à son tempo).</dd>
+    <dt><kbd>S</kbd></dt><dd>Générer une prise de synthèse avec la voix choisie.</dd>
+    <dt><kbd>G</kbd></dt><dd>Écouter la source de la bande rythmo.</dd>
     <dt><kbd>1</kbd>…<kbd>9</kbd></dt><dd>Retenir la prise n.</dd>
     <dt><kbd>M</kbd></dt><dd>Texte entier / bande rythmo.</dd>
     <dt><kbd>V</kbd></dt><dd>Afficher / masquer l'image.</dd>
     <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Vitesse de défilement de la bande rythmo.</dd>`,
-  "help.text": `<p>En mode rythmo, le texte défile au rythme du guide : dites chaque mot quand il passe la barre. Le pré-roll fait démarrer l'image un peu avant la voix.</p>
+  "help.text": `<p><b>Prises.</b> Une réplique a des prises micro (🎙) et des prises de synthèse (✦, générées avec une voix de la bibliothèque). Une seule est retenue (★) : c'est elle qui part dans la piste.</p>
+    <p><b>Bande rythmo.</b> Elle fait défiler les mots au rythme d'une source, au choix : la prise retenue (les mots et les temps entendus par Whisper), la prise de synthèse, la synthèse importée, la durée du plan dans la vidéo, ou un débit moyen. Dites chaque mot quand il passe la barre. Le pré-roll fait démarrer l'image un peu avant la voix.</p>
+    <p><b>Durée.</b> La prise retenue peut être raccourcie ou allongée dans la piste (−/+ par pas de 2 %), ou calée d'un clic sur la durée du plan ou de la synthèse, sans changer la hauteur de la voix. Au-delà de ±20 %, écoutez : la voix peut se dégrader.</p>
     <p>Vous pouvez vous écarter du script : sous chaque prise s'affiche ce que vous avez dit, et c'est ce texte, mot à mot avec ses temps, qui part avec la prise.</p>
     <p>La prise retenue est exportée aussitôt dans la piste voix du projet (Projet ▸ Piste voix) : coupée, débruitée, à −20 LUFS, avec durations.json et words.json pour le montage.</p>
     <p>Débruitage : « Profil de bruit » enregistre 10 s de silence ; ce bruit est soustrait de la piste exportée, recalé sur le silence avant la première syllabe. À refaire si le bruit de la pièce change.</p>`,
 };
 I18N.en = {
   "tab.studio": "Studio", "tab.voices": "Voices", "tab.synth": "Synthesis",
+  "st.export": "▶ Exported", "st.export.t": "Listen to the kept take as it goes into the track: trimmed, denoised, levelled, at its tempo",
+  "tl.synth": "✦ Synthesis", "tl.synth.t": "Have a library voice say the line: a synthetic take joins the takes",
+  "tl.gen": "Generate a take", "tl.gen.t": "Synthetic take of this line in the chosen voice (S)",
+  "tl.band": "Rythmo band", "tl.band.t": "Where the rythmo band gets its rhythm: what scrolls, and when",
+  "tl.listen": "▶ Listen",
+  "tl.dur": "Duration", "tl.dur.t": "Duration of the kept take in the track: sped up or slowed down, pitch unchanged (WSOLA)",
+  "tl.shorter.t": "2 % shorter (faster)", "tl.longer.t": "2 % longer (slower)",
+  "tl.reset": "×1", "tl.reset.t": "Back to the original duration",
+  "tl.fitslot": "= shot {s} s", "tl.fitsynth": "= synthesis {s} s", "tl.fitguide": "= imported synthesis {s} s",
+  "tl.novoice": "no voice ready (Voices tab)", "tl.nokept": "no kept take",
+  "tl.gen.kept": "Synthetic take {n}: kept for the track", "tl.gen.added": "Synthetic take {n} added (★ to keep it instead of the current take)",
+  "tl.tempo.set": "Take fitted to {s} s (×{f})", "tl.tempo.far": "Take fitted to {s} s (×{f}): beyond ±20 %, listen, the voice may degrade",
+  "tl.tempo.reset": "Take back to its original duration",
+  "src.auto": "Auto · {x}", "src.take": "Kept take {n} · {s} s (Whisper timings)", "src.takesynth": "Kept take {n} (synthesis) · {s} s", "src.synth": "Synthesis {v} · {s} s",
+  "src.guide": "Imported synthesis · {s} s", "src.slot": "Shot duration · {s} s", "src.pace": "Average pace · {s} s",
+  "tk.mic": "mic", "tk.unkeep.t": "Stop keeping this take (two clicks)", "tk.unkeep.guide": "Click again to stop keeping this take: the track will use the imported synthesis", "tk.unkeep.empty": "Click again to stop keeping this take: the line will be empty in the track", "tk.relisten": "listen again", "tk.checked": "checked",
+  "tk.tempo.t": "Tempo applied in the track", "tk.synthnew": "Synthetic take",
+  "tk.unkept": "No kept take any more: the line is empty in the track", "tk.unkept.guide": "No kept take any more: the track uses the imported synthesis",
+  "st.slot": "shot {s} s", "st.keptmic": "take {n} (mic) {s} s", "st.keptsynth": "take {n} (synthesis) {s} s",
+  "st.nokept": "no kept take", "st.nokept.guide": "no kept take: imported synthesis in the track",
+  "st.keepone": "No kept take.<br/>Keep one with ★ or <b>1…9</b>.",
+  "st.notake": "No take. <b>Space</b> to record, <b>S</b> for a synthetic take.",
+  "st.guideold": "text changed since the imported synthesis: estimated rhythm",
+  "pj.k.guide": "Imported synthesis",
+  "pj.synth": "Synthetic takes:", "pj.synth.missing": "for lines without a kept take", "pj.synth.all": "for every line",
+  "pj.synth.go": "Generate", "pj.synth.hint": "A synthetic take is added to each line; it is kept only if the line has no other.",
+  "pj.synth.started": "{n} synthetic takes running, line by line", "pj.synth.done": "{n} synthetic takes made, {k} kept",
   "jobs.running": "{n} generation(s) running", err: "Error: {e}",
   "pj.proj": "Project", "pj.voiceproj": "Samples of", "pj.none": "No project", "pj.title": "Project",
   "pj.none.long": "No project open. Open a recent one, create one from a script, or browse your folders.",
@@ -154,10 +205,9 @@ I18N.en = {
   "pj.create": "Create the project", "pj.browse": "Browse folders", "pj.openhere": "Open this project",
   "pj.browse.hint": "◉ = Sosie project (click to open). Clicking a script or a video puts it in \"New project\".",
   "pj.k.dir": "Folder", "pj.k.lang": "Language", "pj.k.lines": "Lines", "pj.k.recorded": "in real voice",
-  "pj.k.export": "Voice track (edit)", "pj.k.takes": "Takes", "pj.k.guide": "Guide", "pj.k.film": "Video",
-  "pj.edit": "Edit the script", "pj.guidegen": "Guide:", "pj.guidego": "Generate with this voice", "pj.close": "Close the project",
+  "pj.k.export": "Voice track (edit)", "pj.k.takes": "Takes", "pj.k.film": "Video",
+  "pj.edit": "Edit the script", "pj.close": "Close the project",
   "pj.err.open": "Cannot open the project: {e}", "pj.err.dir": "Give the project folder",
-  "pj.guide.started": "Guide generation started (line by line, lines already made are skipped)", "pj.guide.done": "Guide ready",
   "sc.title": "Script", "sc.hint": "One paragraph per line. \"# Title\" starts a chapter, a leading \"[ID]\" names the line (keep the IDs: takes are attached to them). The previous script is kept in script.json.bak.",
   "sc.save": "Save the script", "sc.saved": "Script saved",
   "np.title": "No project open", "np.text": "A project is a script cut into lines, the takes recorded for each, and the voice track exported for the edit. Everything is saved as you go, in its folder.",
@@ -169,20 +219,14 @@ I18N.en = {
   "st.noise": "Noise profile", "st.clip.t": "Clipping (click to clear)",
   "st.rec.t": "Record / stop (Space)", "st.redo": "⌫ Redo", "st.redo.t": "Discard the last take and start again",
   "st.take": "▶ Take", "st.take.t": "Listen to the kept take", "st.film": "▶ On picture", "st.film.t": "Listen to the kept take on the picture",
-  "st.guide": "▶ Guide", "st.guide.t": "Listen to the guide (the synthetic voice, on the picture if any)",
-  "st.prev": "◀ Line", "st.next": "Line ▶", "st.useguide": "Guide in the track", "st.useguide.t": "Back to the guide voice for this line",
+  "st.prev": "◀ Line", "st.next": "Line ▶",
   "st.mic.on": "Microphone: {d}", "st.mic.err": "Microphone unavailable: {e}",
-  "st.tooshort": "Take too short, ignored", "st.upload.err": "Cannot send the take: {e}", "st.discarded": "Take {n} discarded",
-  "st.useguide.done": "Guide voice kept for this line", "st.kept": "Take {n} kept",
-  "st.noguide": "No guide for this line (Project ▸ Guide: generate it with a voice)",
+  "st.tooshort": "Take too short, ignored", "st.upload.err": "Cannot send the take: {e}", "st.discarded": "Take {n} discarded", "st.kept": "Take {n} kept",
   "st.noexport": "No exported take for this line yet",
   "st.todo": "To record · {n}", "st.todo1": "to record", "st.noline": "This script has no line.",
-  "st.realvoice": "real voice · take {n} {of}", "st.ntakes": "{n} take(s)", "st.line": "Line {i}/{n}",
-  "st.infilm": "in the video at {t}", "st.guidedur": "guide {s} s", "st.realdur": "real voice {s} s",
-  "st.guideold": "text changed since the guide: estimated rhythm",
-  "st.prog": "<b>{n}</b>/{of} in real voice {d}",
-  "st.notake": "No take. <b>Space</b> to record.", "st.notake.guide": "The track uses the guide voice ({s} s).",
-  "st.usingguide": "The track uses the <b>guide voice</b>.<br/>Keep a take with ★ or <b>1…9</b>.",
+  "st.status.mic": "take {n} kept (mic)", "st.status.synth": "take {n} kept (synthesis {v})", "st.ntakes": "{n} take(s)", "st.line": "Line {i}/{n}",
+  "st.infilm": "in the video at {t}",
+  "st.prog": "<b>{n}</b>/{of} in real voice", "st.prog.synth": "<b>{k}</b> synthetic",
   "st.nr.done": "Denoising -{db} dB max: kept takes redone", "st.nr.off": "No denoising: kept takes redone",
   "st.chan.autodone": "Channel chosen by level, for each take", "st.chan.done": "Only input {n} is kept",
   "st.film.err": "Unreadable video: guide without picture",
@@ -262,13 +306,16 @@ I18N.en = {
     <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next line (also <kbd>↑</kbd> <kbd>↓</kbd>).</dd>
     <dt><kbd>⏎</kbd></dt><dd>Listen to the kept take; what you said scrolls in the band.</dd>
     <dt><kbd>F</kbd></dt><dd>Listen to the kept take on the picture.</dd>
-    <dt><kbd>T</kbd></dt><dd>Listen to the take as exported (trimmed, denoised, levelled).</dd>
-    <dt><kbd>G</kbd></dt><dd>Listen to the guide.</dd>
+    <dt><kbd>T</kbd></dt><dd>Listen to the take as it goes into the track (trimmed, denoised, levelled, at its tempo).</dd>
+    <dt><kbd>S</kbd></dt><dd>Generate a synthetic take in the chosen voice.</dd>
+    <dt><kbd>G</kbd></dt><dd>Listen to the source of the rythmo band.</dd>
     <dt><kbd>1</kbd>…<kbd>9</kbd></dt><dd>Keep take n.</dd>
     <dt><kbd>M</kbd></dt><dd>Full text / rythmo band.</dd>
     <dt><kbd>V</kbd></dt><dd>Show / hide the picture.</dd>
     <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Scrolling speed of the rythmo band.</dd>`,
-  "help.text": `<p>In rythmo mode the text scrolls at the pace of the guide: say each word as it crosses the bar. The pre-roll starts the picture a little before the voice.</p>
+  "help.text": `<p><b>Takes.</b> A line has microphone takes (🎙) and synthetic takes (✦, generated with a library voice). One is kept (★): that one goes into the track.</p>
+    <p><b>Rythmo band.</b> It scrolls the words at the pace of a source of your choice: the kept take (the words and timings Whisper heard), the synthetic take, the imported synthesis, the shot's duration in the video, or an average pace. Say each word as it crosses the bar. The pre-roll starts the picture a little before the voice.</p>
+    <p><b>Duration.</b> The kept take can be made shorter or longer in the track (−/+ in 2 % steps), or fitted in one click to the shot or the synthesis, pitch unchanged. Beyond ±20 %, listen: the voice may degrade.</p>
     <p>You can stray from the script: what you said shows under each take, and that text, word by word with its timings, goes with the take.</p>
     <p>The kept take is exported at once to the project's voice track (Project ▸ Voice track): trimmed, denoised, at −20 LUFS, with durations.json and words.json for the edit.</p>
     <p>Denoising: "Noise profile" records 10 s of silence; that noise is subtracted from the exported track, matched to the silence before the first syllable. Redo it if the room noise changes.</p>`,

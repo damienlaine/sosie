@@ -164,9 +164,11 @@ async function openProjectDialog() {
       <dt>${t("pj.k.film")}</dt><dd>${esc(d.filmName || "—")}</dd></dl>
       <div class="row" style="margin-top:10px">
         <button id="pj-edit">${t("pj.edit")}</button>
-        ${G.app.engine.available && vlist.length ? `<span class="muted">${t("pj.guidegen")}</span><select id="pj-gvoice">${vlist.map((v) => `<option value="${esc(v.id)}">${esc(v.name)} (${v.lang})</option>`).join("")}</select><button id="pj-guide">${t("pj.guidego")}</button>` : ""}
-        <span class="spacer"></span><button id="pj-close">${t("pj.close")}</button>
-      </div></div>`;
+        <span class="spacer"></span><button id="pj-close">${t("pj.close")}</button></div>
+      ${G.app.engine.available && vlist.length ? `<div class="row" style="margin-top:10px"><span class="muted">${t("pj.synth")}</span>
+        <select id="pj-gvoice">${vlist.map((v) => `<option value="${esc(v.id)}">${esc(v.name)} · ${v.lang}</option>`).join("")}</select>
+        <select id="pj-gwhich"><option value="missing">${t("pj.synth.missing")}</option><option value="all">${t("pj.synth.all")}</option></select>
+        <button id="pj-guide">${t("pj.synth.go")}</button></div><p class="muted" style="font-size:12px;margin-top:4px">${t("pj.synth.hint")}</p>` : ""}</div>`;
     $("#pj-edit").onclick = openScriptEditor;
     $("#pj-close").onclick = async () => {
       await post("/api/project/close");
@@ -175,9 +177,9 @@ async function openProjectDialog() {
       $("#projdlg").classList.remove("on");
     };
     if ($("#pj-guide")) {
-      const gv = vlist.find((v) => v.lang === p.lang);
+      const gv = vlist.find((v) => v.id === $("#t-voice").value) || vlist.find((v) => v.lang === p.lang);
       if (gv) $("#pj-gvoice").value = gv.id;
-      $("#pj-guide").onclick = () => makeGuide($("#pj-gvoice").value);
+      $("#pj-guide").onclick = () => synthAll($("#pj-gvoice").value, $("#pj-gwhich").value);
     }
   } else cur.innerHTML = `<p class="muted">${t("pj.none.long")}</p>`;
   const rec = $("#pj-recent");
@@ -205,18 +207,22 @@ async function openProject(dir) {
   }
 }
 
-async function makeGuide(vid) {
-  const job = await post("/api/guide", { voice: vid });
-  toast(t("pj.guide.started"));
-  $("#projdlg").classList.remove("on");
-  watchJob(job, {
-    onProgress: (j) => j.progress && ($("#jobs").title = `${j.progress.line}/${j.progress.lines} ${j.progress.id}`),
-    onDone: async () => {
-      toast(t("pj.guide.done"));
-      await loadProject();
-    },
-    onError: (e) => toast(t("err", { e })),
-  });
+async function synthAll(vid, which) {
+  try {
+    const job = await post("/api/synthtakes", { voice: vid, [which]: true });
+    toast(t("pj.synth.started", { n: job.ids.length }), 4000);
+    $("#projdlg").classList.remove("on");
+    watchJob(job, {
+      onProgress: (j) => j.progress && ($("#jobs").title = `${j.progress.line}/${j.progress.lines} ${j.progress.id}`),
+      onDone: async (res) => {
+        toast(t("pj.synth.done", { n: res.takes.length, k: res.takes.filter((x) => x.kept).length }), 5000);
+        await loadProject();
+      },
+      onError: (e) => toast(t("err", { e })),
+    });
+  } catch (e) {
+    toast(t("err", { e: e.message }));
+  }
 }
 
 // folder picker
@@ -460,7 +466,7 @@ function startRec() {
   S.node.port.postMessage("start");
   document.body.classList.add("recording");
   if (S.mode === "rythmo") {
-    S.rec.words = guideWords(sh);
+    S.rec.words = bandWords(sh);
     if (S.film && hasFilm(sh)) {
       S.rec.clock = () => film.currentTime - sh.film.vo;
       film.muted = true;
@@ -556,7 +562,7 @@ function finishRec() {
       upload(r.id, wav24([chs[k], chs[k]], sr), { mode: r.mode, preroll: S.preroll, device: S.devLabel, channels: chs.length, source: k });
     } else toast(t("st.tooshort"));
   }
-  setStrip(guideWords(cur()));
+  setStrip(bandWords(cur()));
   if (r.restart) startRec();
 }
 
@@ -639,11 +645,10 @@ function replaceShot(st) {
   const sh = byId(st.id);
   if (!sh) return;
   const pending = sh.takes.filter((tk) => tk.tmp);
-  const hadGuide = !!sh.guide;
   Object.assign(sh, st);
   sh.takes = st.takes.concat(pending);
   refresh(st.id);
-  if (!hadGuide && sh.guide && sh === cur() && !S.rec && !S.play) setStrip(guideWords(sh));
+  if (sh === cur() && !S.rec && !S.play) setStrip(bandWords(sh));
 }
 
 async function discardTake(n, restart) {
@@ -667,7 +672,7 @@ async function selectTake(n) {
   sh.sel = n;
   refresh(sh.id);
   replaceShot(await post(n == null ? `/api/unselect/${encodeURIComponent(sh.id)}` : `/api/select/${encodeURIComponent(sh.id)}/${n}`));
-  toast(n == null ? t("st.useguide.done") : t("st.kept", { n }));
+  toast(n == null ? t(sh.gdur ? "tk.unkept.guide" : "tk.unkept") : t("st.kept", { n }));
 }
 
 // ------------------------------------------------------------------ listening
@@ -680,24 +685,49 @@ function stopPlay() {
   clearKaraoke();
   updateButtons();
   renderTakes();
-  if (!S.rec && S.data && S.lines.length) setStrip(guideWords(cur()));
+  if (!S.rec && S.data && S.lines.length) setStrip(bandWords(cur()));
 }
 
-function playGuide() {
+function playRythmo() {
   const sh = cur();
   stopPlay();
-  const words = guideWords(sh);
-  if (hasFilm(sh)) {
-    film.muted = false;
-    film.currentTime = Math.max(0, sh.film.vo - 0.6);
+  const src = bandSource(sh);
+  const words = src.words();
+  const au = src.audio?.();
+  const end = words.length ? words.at(-1).e + 0.6 : 2;
+  if (au) {
+    player.src = au.url;
+    player.currentTime = au.a;
+    if (hasFilm(sh) && S.film) {
+      let started = false;
+      film.muted = true;
+      film.currentTime = Math.max(0, sh.film.vo - 1.2);
+      film.play().catch(() => {});
+      S.play = {
+        kind: "guide", words,
+        t: () => (started ? player.currentTime - au.a : film.currentTime - sh.film.vo),
+        step: () => {
+          if (!started && film.currentTime >= sh.film.vo) {
+            started = true;
+            player.currentTime = au.a;
+            player.play().catch(() => {});
+          }
+        },
+        done: () => started && player.ended,
+      };
+    } else {
+      player.play().catch(() => {});
+      S.play = { kind: "guide", words, t: () => player.currentTime - au.a, done: () => player.ended };
+    }
+  } else if (hasFilm(sh) && S.film) {     // no audio for this source: the band scrolls over the picture
+    film.muted = true;
+    film.currentTime = Math.max(0, sh.film.vo - 1.2);
     film.play().catch(() => {});
-    S.play = { kind: "guide", words, t: () => film.currentTime - sh.film.vo, done: () => film.ended || film.currentTime >= sh.film.start + sh.film.dur + 0.2 };
-  } else if (sh.gdur) {
-    player.src = `/guide/${encodeURIComponent(sh.id)}.wav?v=${encodeURIComponent(sh.gtext || "")}`;
-    player.currentTime = 0;
-    player.play().catch(() => {});
-    S.play = { kind: "guide", words, t: () => player.currentTime, done: () => player.ended };
-  } else return toast(t("st.noguide"));
+    S.play = { kind: "guide", words, t: () => film.currentTime - sh.film.vo, done: () => film.currentTime - sh.film.vo > end };
+  } else {
+    const t0 = performance.now();
+    S.play = { kind: "guide", words, t: () => (performance.now() - t0) / 1000 - 1, done: () => (performance.now() - t0) / 1000 - 1 > end };
+  }
   setStrip(words);
   updateButtons();
 }
@@ -746,11 +776,104 @@ function playExport() {
   player.src = `/export/${encodeURIComponent(sh.id)}.wav?v=${encodeURIComponent(sh.export)}`;
   player.currentTime = 0;
   player.play().catch(() => {});
-  const words = (tk.heard || []).map((w) => ({ ...w, s: w.s - a, e: w.e - a }));
+  const f = tempoOf(tk);
+  const words = (tk.heard || []).map((w) => ({ ...w, s: (w.s - a) / f, e: (w.e - a) / f }));
   S.play = { kind: "proc", n: tk.n, words, t: () => player.currentTime, done: () => player.ended };
   setStrip(words);
   updateButtons();
   renderTakes();
+}
+
+// ------------------------------------------------------------------ tools: synthetic take, band source, duration
+function studioVoices() {
+  return (G.app.voices || []).filter((v) => v.ref);
+}
+
+function renderTools() {
+  if (!S.data || !S.lines.length) return;
+  const sh = cur();
+  const vs = studioVoices();
+  const tv = $("#t-voice");
+  const lang = S.data.project.lang;
+  const want = LS.get("tvoice:" + S.data.project.dir, null) || (typeof S.data.project.voice === "string" ? S.data.project.voice : null);
+  tv.innerHTML = vs.map((v) => `<option value="${esc(v.id)}">${esc(v.name)} · ${esc(v.lang)}</option>`).join("") || `<option value="">${esc(t("tl.novoice"))}</option>`;
+  tv.value = vs.some((v) => v.id === want) ? want : (vs.find((v) => v.lang === lang) || vs[0] || {}).id || "";
+  $("#b-gen").disabled = !vs.length || !G.app.engine.available || !!S.gen[sh.id];
+  $("#b-gen").title = !G.app.engine.available ? t("sy.notinstalled") : !vs.length ? t("tl.novoice") : t("tl.gen.t");
+  // band source
+  const list = sources(sh), src = bandSource(sh), want2 = LS.get(srcKey(), "auto");
+  $("#t-src").innerHTML = `<option value="auto">${esc(t("src.auto", { x: src.label }))}</option>` + list.map((o) => `<option value="${o.key}">${esc(o.label)}</option>`).join("");
+  $("#t-src").value = list.some((o) => o.key === want2) ? want2 : "auto";
+  // duration of the kept take
+  const tk = selTake(sh);
+  const ok = !!(tk && tk.status === "ok");
+  ["#t-shorter", "#t-longer", "#t-reset"].forEach((q) => ($(q).disabled = !ok));
+  $("#t-reset").disabled = !ok || tempoOf(tk) === 1;
+  if (ok) {
+    const d0 = speechDur(tk), f = tempoOf(tk);
+    $("#t-dur").innerHTML = f === 1 ? `${d0.toFixed(1)} s` : `${d0.toFixed(1)} → <b>${(d0 / f).toFixed(1)} s</b>`;
+  } else $("#t-dur").textContent = t("tl.nokept");
+  const fits = [];
+  if (sh.slot) fits.push([t("tl.fitslot", { s: sh.slot.toFixed(1) }), sh.slot]);
+  const syn = lastSynth(sh);
+  if (syn && syn !== tk) fits.push([t("tl.fitsynth", { s: speechDur(syn).toFixed(1) }), speechDur(syn)]);
+  else if (sh.gdur) fits.push([t("tl.fitguide", { s: sh.gdur.toFixed(1) }), sh.gdur]);
+  ["#t-fit1", "#t-fit2"].forEach((q, i) => {
+    const b = $(q);
+    b.style.display = fits[i] ? "" : "none";
+    if (!fits[i]) return;
+    b.textContent = fits[i][0];
+    b.disabled = !ok;
+    b.onclick = () => setTempo(speechDur(tk) / fits[i][1]);
+  });
+}
+
+async function setTempo(f) {
+  const sh = cur();
+  const tk = selTake(sh);
+  if (!tk || tk.status !== "ok") return;
+  f = clamp(f, 0.7, 1.4);
+  if (Math.abs(f - 1) < 0.004) f = 1;
+  replaceShot(await post(`/api/tempo/${encodeURIComponent(sh.id)}/${tk.n}`, { tempo: f }));
+  toast(f === 1 ? t("tl.tempo.reset") : t(Math.abs(f - 1) > 0.2 ? "tl.tempo.far" : "tl.tempo.set", { s: (speechDur(tk) / f).toFixed(1), f: f.toFixed(2) }));
+}
+
+S.gen = {};
+async function genSynth() {
+  if (!S.data || !S.lines.length || S.rec) return;
+  const sh = cur();
+  const vid = $("#t-voice").value;
+  if (!vid || !G.app.engine.available) return toast(!G.app.engine.available ? t("sy.notinstalled") : t("tl.novoice"));
+  if (S.gen[sh.id]) return;
+  const name = studioVoices().find((v) => v.id === vid)?.name || vid;
+  S.gen[sh.id] = { voice: name, label: t(G.app.engine.loaded ? "sy.queued" : "sy.loading") };
+  refresh(sh.id);
+  try {
+    const job = await post("/api/synthtakes", { voice: vid, ids: [sh.id] });
+    watchJob(job, {
+      onProgress: (j) => {
+        if (!S.gen[sh.id]) return;
+        S.gen[sh.id].label = j.progress?.sentence ? t("sy.progress", { s: j.progress.sentence, n: j.progress.sentences, d: j.progress.draw, of: j.progress.draws }) : t(j.status === "running" ? "sy.loading" : "sy.queued");
+        if (sh === cur()) renderTakes();
+      },
+      onDone: async (res) => {
+        delete S.gen[sh.id];
+        G.app.engine.loaded = true;
+        replaceShot(await api(`/api/line/${encodeURIComponent(sh.id)}`));
+        const r = res.takes[0];
+        toast(r.kept ? t("tl.gen.kept", { n: r.n }) : t("tl.gen.added", { n: r.n }), 4000);
+      },
+      onError: (e) => {
+        delete S.gen[sh.id];
+        refresh(sh.id);
+        toast(t("err", { e }));
+      },
+    });
+  } catch (e) {
+    delete S.gen[sh.id];
+    refresh(sh.id);
+    toast(t("err", { e: e.message }));
+  }
 }
 
 // ------------------------------------------------------------------ rythmo band and karaoke
@@ -773,6 +896,50 @@ function guideWords(sh) {
   if (sh.guide && sh.guide.length === sh.tok.length) return sh.guide;
   return estimate(sh.tok, sh.gdur && sh.gtext === sh.text ? sh.gdur : sh.tok.length / 2.45 + 0.4);
 }
+
+// Where the rythmo band takes its timing from: the kept take (the words Whisper heard, with their times), the synthetic
+// take, the imported synthesis, the shot's duration in the video, or an average speaking rate.
+const LETTER = /[\p{L}\p{N}]/u;
+const tempoOf = (tk) => tk?.tempo || 1;
+const speechDur = (tk) => tk.trim[1] - tk.trim[0];
+const lastSynth = (sh) => sh.takes.filter((x) => !x.tmp && x.kind === "synth" && x.status === "ok").at(-1);
+const srcKey = () => "rsrc:" + S.data.project.dir;
+function takeTrack(sh, tk) {
+  // the kept take is heard as exported (trimmed, at its tempo); another take raw, from its speech start
+  const exp = tk.n === sh.sel && sh.export;
+  const a = tk.trim[0], f = exp ? tempoOf(tk) : 1;
+  return {
+    words: (tk.heard || []).filter((w) => LETTER.test(w.t)).map((w) => ({ t: w.t, s: Math.max(0, w.s - a) / f, e: Math.max(0, w.e - a) / f })),
+    audio: exp ? { url: `/export/${encodeURIComponent(sh.id)}.wav?v=${encodeURIComponent(sh.export)}`, a: 0 }
+      : { url: `/takes/${encodeURIComponent(sh.id)}/${tk.file}?v=${encodeURIComponent(tk.created || "")}`, a },
+    dur: speechDur(tk) / f,
+  };
+}
+function sources(sh) {
+  const out = [];
+  const kept = selTake(sh);
+  if (kept && kept.status === "ok") {
+    const tr = takeTrack(sh, kept);
+    out.push({ key: "take", label: t(kept.kind === "synth" ? "src.takesynth" : "src.take", { n: kept.n, s: tr.dur.toFixed(1) }), words: () => tr.words, audio: () => tr.audio });
+  }
+  const syn = lastSynth(sh);
+  if (syn && syn !== kept) {
+    const tr = takeTrack(sh, syn);
+    out.push({ key: "synth", label: t("src.synth", { v: syn.voiceName || syn.voice, s: tr.dur.toFixed(1) }), words: () => tr.words, audio: () => tr.audio });
+  }
+  if (sh.gdur) out.push({ key: "guide", label: t("src.guide", { s: sh.gdur.toFixed(1) }), words: () => guideWords(sh),
+    audio: () => ({ url: `/guide/${encodeURIComponent(sh.id)}.wav?v=${encodeURIComponent(sh.gtext || "")}`, a: 0 }) });
+  if (sh.slot) out.push({ key: "slot", label: t("src.slot", { s: sh.slot.toFixed(1) }), words: () => estimate(sh.tok, sh.slot) });
+  const avg = sh.tok.length / 2.45 + 0.4;
+  out.push({ key: "pace", label: t("src.pace", { s: avg.toFixed(1) }), words: () => estimate(sh.tok, avg) });
+  return out;
+}
+function bandSource(sh) {
+  const list = sources(sh);
+  const want = LS.get(srcKey(), "auto");
+  return list.find((x) => x.key === want) || ["synth", "guide", "take", "slot", "pace"].map((k) => list.find((x) => x.key === k)).find(Boolean);
+}
+const bandWords = (sh) => bandSource(sh).words();
 
 let stripWords = [], stripEls = [], stripIdx = -2;
 function setStrip(words) {
@@ -871,8 +1038,9 @@ function paraHTML(sh) {
 function badge(sh) {
   const real = realTakes(sh);
   const tk = selTake(sh);
-  if (sh.takes.some((x) => x.tmp || x.status === "analyse")) return { cls: "", html: '<span class="spin"></span>' };
-  if (tk && tk.status === "ok") return { cls: tk.clips ? "voice warn" : "voice", html: real.length > 1 ? `● ${real.length}` : "●" };
+  if (S.gen[sh.id] || sh.takes.some((x) => x.tmp || x.status === "analyse")) return { cls: "", html: '<span class="spin"></span>' };
+  const mark = tk?.kind === "synth" ? "✦" : "●";
+  if (tk && tk.status === "ok") return { cls: tk.clips ? "voice warn" : "voice", html: real.length > 1 ? `${mark} ${real.length}` : mark };
   return { cls: "", html: real.length ? String(real.length) : "" };
 }
 
@@ -971,7 +1139,8 @@ function shotStatus(sh) {
   if (!d) return;
   const tk = selTake(sh);
   const n = realTakes(sh).length;
-  d.querySelector(".st").textContent = tk && tk.status === "ok" ? t("st.realvoice", { n: tk.n, of: n > 1 ? n : "" }) : n ? t("st.ntakes", { n }) : "";
+  d.querySelector(".st").textContent = tk && tk.status === "ok" ? t(tk.kind === "synth" ? "st.status.synth" : "st.status.mic", { n: tk.n, v: tk.voiceName || "" }) + (n > 1 ? " · " + t("st.ntakes", { n }) : "")
+    : n ? t("st.ntakes", { n }) : "";
   d.querySelector("p").innerHTML = paraHTML(sh);
 }
 
@@ -985,24 +1154,26 @@ function renderInfo() {
   const ct = chapTitle(sh.ch);
   if (ct) parts.push(ct);
   if (sh.film) parts.push(t("st.infilm", { t: fmt(sh.film.vo) }));
-  if (sh.gdur) parts.push(t("st.guidedur", { s: sh.gdur.toFixed(1) }));
+  if (sh.slot) parts.push(t("st.slot", { s: sh.slot.toFixed(1) }));
   const tk = selTake(sh);
-  if (tk && tk.trim) parts.push(`<b>${t("st.realdur", { s: (tk.trim[1] - tk.trim[0]).toFixed(1) })}</b>`);
-  if (sh.gtext && sh.gtext !== sh.text) parts.push(`<span class="warn">${t("st.guideold")}</span>`);
+  if (tk && tk.trim) parts.push(`<b>${t(tk.kind === "synth" ? "st.keptsynth" : "st.keptmic", { n: tk.n, s: (speechDur(tk) / tempoOf(tk)).toFixed(1) })}</b>`);
+  else parts.push(`<span class="warn">${t(sh.gdur ? "st.nokept.guide" : "st.nokept")}</span>`);
+  if (sh.gdur && sh.gtext && sh.gtext !== sh.text && bandSource(sh).key === "guide") parts.push(`<span class="warn">${t("st.guideold")}</span>`);
   if (sh.note) parts.push(`<span class="warn">${esc(sh.note)}</span>`);
   $("#info").innerHTML = parts.join(" · ");
 }
 
 function progress() {
-  let n = 0, dur = 0;
+  let n = 0, k = 0, dur = 0;
   for (const sh of S.lines) {
     const tk = selTake(sh);
     if (tk && tk.status === "ok") {
-      n++;
-      dur += tk.trim[1] - tk.trim[0];
+      if (tk.kind === "synth") k++;
+      else n++;
+      dur += speechDur(tk) / tempoOf(tk);
     }
   }
-  $("#prog").innerHTML = t("st.prog", { n, of: S.lines.length, d: n ? fmt(dur).replace(/\.\d$/, "") : "" });
+  $("#prog").innerHTML = t("st.prog", { n, of: S.lines.length }) + (k ? " · " + t("st.prog.synth", { k }) : "") + (n + k ? ` · ${fmt(dur).replace(/\.\d$/, "")}` : "");
 }
 
 function renderTakes() {
@@ -1010,21 +1181,25 @@ function renderTakes() {
   const sh = cur();
   const box = $("#takes");
   box.innerHTML = "";
-  if (!sh.takes.length) {
-    box.append(el("div", "empty", t("st.notake") + (sh.gdur ? " " + t("st.notake.guide", { s: sh.gdur.toFixed(1) }) : "")));
+  if (S.gen[sh.id]) box.append(el("div", "take synth", `<div class="th"><b>${t("tk.synthnew")}</b><span class="kind">✦ ${esc(S.gen[sh.id].voice)}</span></div>
+    <div class="ti"><span class="spin"></span> ${esc(S.gen[sh.id].label)}</div>`));
+  if (!sh.takes.length && !S.gen[sh.id]) {
+    box.append(el("div", "empty", t("st.notake")));
     return;
   }
   [...sh.takes].sort((a, b) => (b.tmp ? 1e12 : b.n) - (a.tmp ? 1e12 : a.n)).forEach((tk) => box.append(takeCard(sh, tk)));
-  if (sh.sel == null) box.prepend(el("div", "empty", t("st.usingguide")));
+  if (sh.sel == null && sh.takes.length) box.prepend(el("div", "empty", t("st.keepone")));
 }
 
 function takeCard(sh, tk) {
-  const c = el("div", "take" + (sh.sel === tk.n && !tk.tmp ? " sel" : "") + (S.play && S.play.n === tk.n ? " playing" : ""));
+  const c = el("div", "take" + (sh.sel === tk.n && !tk.tmp ? " sel" : "") + (tk.kind === "synth" ? " synth" : "") + (S.play && S.play.n === tk.n ? " playing" : ""));
   if (tk.tmp) {
     c.innerHTML = `<div class="th"><b>${t("tk.new")}</b></div><div class="ti"><span class="spin"></span> ${t("tk.sending")}</div>`;
     return c;
   }
-  c.append(el("div", "th", `<b>${t("tk.take", { n: tk.n })}</b><span class="when">${esc((tk.created || "").slice(11, 16))}</span>${sh.sel === tk.n ? `<span class="star">★ ${t("tk.kept")}</span>` : ""}`));
+  const head = el("div", "th", `<b>${t("tk.take", { n: tk.n })}</b><span class="kind">${tk.kind === "synth" ? "✦ " + esc(tk.voiceName || tk.voice) : "🎙 " + t("tk.mic")}</span><span class="when">${esc((tk.created || "").slice(11, 16))}</span>${sh.sel === tk.n ? `<span class="star" title="${esc(t("tk.unkeep.t"))}">★ ${t("tk.kept")}</span>` : ""}`);
+  head.querySelector(".star")?.addEventListener("click", () => confirmTwice(head, t(sh.gdur ? "tk.unkeep.guide" : "tk.unkeep.empty")) && selectTake(null));
+  c.append(head);
   const cv = el("canvas");
   cv.width = 520;
   cv.height = 80;
@@ -1035,8 +1210,10 @@ function takeCard(sh, tk) {
   if (tk.status === "analyse") info.innerHTML = `<span class="spin"></span> ${t("tk.analysing")}`;
   else if (tk.status === "erreur") info.innerHTML = `<span class="chip bad">${t("tk.error")}</span> ${esc(tk.error || "")}`;
   else {
-    const chips = [`<span>${(tk.trim[1] - tk.trim[0]).toFixed(1)} s</span>`];
-    if (tk.clips) chips.push(`<span class="chip bad">${t("tk.clipping")}</span>`);
+    const chips = [`<span>${(speechDur(tk) / tempoOf(tk)).toFixed(1)} s</span>`];
+    if (tempoOf(tk) !== 1) chips.push(`<span class="chip mid" title="${esc(t("tk.tempo.t"))}">×${tempoOf(tk).toFixed(2)}</span>`);
+    if (tk.kind === "synth") chips.push(tk.worst ? `<span class="chip mid">${t("tk.relisten")}</span>` : `<span class="chip good">${t("tk.checked")}</span>`);
+    else if (tk.clips) chips.push(`<span class="chip bad">${t("tk.clipping")}</span>`);
     else if (tk.peak_db < -24) chips.push(`<span class="chip mid">${t("tk.low", { db: tk.peak_db })}</span>`);
     else chips.push(`<span class="chip good">${t("tk.peak", { db: tk.peak_db })}</span>`);
     info.innerHTML = chips.join("");
@@ -1093,9 +1270,10 @@ function updateButtons() {
   $("#b-take").classList.toggle("on", kind === "take");
   $("#b-film").classList.toggle("on", kind === "film");
   $("#b-guide").classList.toggle("on", kind === "guide");
+  $("#b-export").classList.toggle("on", kind === "proc");
   const sh = cur();
   $("#b-film").disabled = !hasFilm(sh);
-  $("#b-synth").disabled = sh.sel == null;
+  renderTools();
 }
 
 function refresh(id) {
@@ -1128,7 +1306,7 @@ function go(i, instant = false) {
   renderTakes();
   renderInfo();
   updateButtons();
-  setStrip(guideWords(sh));
+  setStrip(bandWords(sh));
   if (hasFilm(sh)) {
     film.pause();
     film.muted = true;
@@ -1153,7 +1331,7 @@ function setMode(m) {
   if (S.data && S.lines.length) {
     clearKaraoke();
     if (m === "texte") requestAnimationFrame(() => centerShot(true));
-    else if (!S.rec && !S.play) setStrip(guideWords(cur()));
+    else if (!S.rec && !S.play) setStrip(bandWords(cur()));
   }
 }
 
@@ -1173,10 +1351,26 @@ $("#recbtn").onclick = () => (S.rec ? stopRec(true) : startRec());
 $("#b-redo").onclick = () => (S.rec ? stopRec(false, true) : discardTake(null, true));
 $("#b-take").onclick = () => (S.play?.kind === "take" ? stopPlay() : playTake());
 $("#b-film").onclick = () => (S.play?.kind === "film" ? stopPlay() : playTake(null, true));
-$("#b-guide").onclick = () => (S.play?.kind === "guide" ? stopPlay() : playGuide());
+$("#b-guide").onclick = () => (S.play?.kind === "guide" ? stopPlay() : playRythmo());
+$("#b-export").onclick = () => (S.play?.kind === "proc" ? stopPlay() : playExport());
+$("#b-gen").onclick = genSynth;
+$("#t-src").onchange = (e) => {
+  e.target.blur();
+  LS.set(srcKey(), e.target.value);
+  stopPlay();
+  setStrip(bandWords(cur()));
+  renderTools();
+  renderInfo();
+};
+$("#t-voice").onchange = (e) => {
+  e.target.blur();
+  LS.set("tvoice:" + S.data.project.dir, e.target.value);
+};
+$("#t-shorter").onclick = () => setTempo(tempoOf(selTake(cur())) * 1.02);
+$("#t-longer").onclick = () => setTempo(tempoOf(selTake(cur())) / 1.02);
+$("#t-reset").onclick = () => setTempo(1);
 $("#b-prev").onclick = () => go(S.cur - 1);
 $("#b-next").onclick = () => go(S.cur + 1);
-$("#b-synth").onclick = () => selectTake(null);
 $("#clip").onclick = () => $("#clip").classList.remove("on");
 document.querySelectorAll("#mode button").forEach((b) => (b.onclick = () => setMode(b.dataset.m)));
 $("#filmon").onchange = (e) => {
@@ -1262,12 +1456,13 @@ document.addEventListener("keydown", (e) => {
     case "ArrowLeft": case "ArrowUp": case "PageUp": go(S.cur - 1); break;
     case "Enter": S.play?.kind === "take" ? stopPlay() : playTake(); break;
     case "f": case "F": S.play?.kind === "film" ? stopPlay() : playTake(null, true); break;
-    case "g": case "G": S.play?.kind === "guide" ? stopPlay() : playGuide(); break;
+    case "g": case "G": S.play?.kind === "guide" ? stopPlay() : playRythmo(); break;
+    case "s": case "S": genSynth(); break;
     case "t": case "T": S.play?.kind === "proc" ? stopPlay() : playExport(); break;
     case "m": case "M": setMode(S.mode === "texte" ? "rythmo" : "texte"); break;
     case "v": case "V": setFilm(!S.film); break;
-    case "+": case "=": S.pxs = clamp(S.pxs * 1.15, 200, 900); LS.set("pxs", S.pxs); if (!S.play) setStrip(guideWords(cur())); break;
-    case "-": S.pxs = clamp(S.pxs / 1.15, 200, 900); LS.set("pxs", S.pxs); if (!S.play) setStrip(guideWords(cur())); break;
+    case "+": case "=": S.pxs = clamp(S.pxs * 1.15, 200, 900); LS.set("pxs", S.pxs); if (!S.play) setStrip(bandWords(cur())); break;
+    case "-": S.pxs = clamp(S.pxs / 1.15, 200, 900); LS.set("pxs", S.pxs); if (!S.play) setStrip(bandWords(cur())); break;
     case "?": $("#help").classList.toggle("on"); break;
     default:
       if (/^[1-9]$/.test(k)) selectTake(+k);

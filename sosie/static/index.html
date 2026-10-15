@@ -131,14 +131,26 @@ body.recording #recbadge { display: block; }
 body.recording #stage::after { content: ""; position: absolute; inset: 0; border: 3px solid var(--red); pointer-events: none; z-index: 4; }
 body.recording #bar { background: var(--red); box-shadow: 0 0 12px var(--red); }
 
-#studio-foot { background: var(--panel); border-top: 1px solid var(--line); padding: 8px 16px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 22px; }
+#studio-foot { background: var(--panel); border-top: 1px solid var(--line); padding: 8px 16px 12px; display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 8px 18px; }
+.tcol { display: flex; flex-direction: column; gap: 8px; }
+#tools { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); align-self: start; }
+.trow { display: flex; gap: 6px; align-items: center; font-size: 13px; white-space: nowrap; }
+.trow .tl { width: 96px; color: var(--muted); font-size: 12px; }
+.trow select { max-width: 330px; }
+.trow button { padding: 3px 8px; font-size: 12px; }
+.trow button.sq { width: 26px; padding: 3px 0; font-weight: 700; }
+.mono { font-family: var(--mono); font-size: 12px; min-width: 128px; text-align: center; }
+.mono b { color: var(--teal); }
+.take .th .kind { font-size: 11px; color: var(--muted); }
+.take.synth { border-style: dashed; }
+.take .th .star { cursor: pointer; }
 #info { grid-column: 1 / -1; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #info b { color: var(--ink); }
-#transport { display: grid; grid-template-columns: auto auto; gap: 8px 14px; align-items: center; }
+#transport { display: grid; grid-template-columns: auto auto; gap: 8px 14px; align-items: center; align-self: start; }
 .recbtn { grid-row: span 2; width: 74px; height: 74px; border-radius: 50%; background: #241315; border: 3px solid var(--red); display: grid; place-items: center; padding: 0; }
 .recbtn i { width: 30px; height: 30px; border-radius: 50%; background: var(--red); transition: border-radius .15s; }
 body.recording .recbtn i { border-radius: 5px; width: 26px; height: 26px; }
-.tbtns { display: flex; gap: 6px; flex-wrap: wrap; max-width: 430px; }
+.tbtns { display: flex; gap: 6px; flex-wrap: wrap; max-width: 470px; }
 .tbtns button.on { border-color: var(--teal); color: var(--teal); }
 #takes { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; min-height: 170px; align-items: flex-start; }
 .empty { align-self: center; max-width: 360px; font-size: 14px; color: var(--muted); }
@@ -292,16 +304,26 @@ details[open] > summary { margin-bottom: 8px; }
     <div id="info"></div>
     <div id="transport">
       <button class="recbtn" id="recbtn" data-i18n-title="st.rec.t"><i></i></button>
-      <div class="tbtns">
-        <button id="b-redo" data-i18n="st.redo" data-i18n-title="st.redo.t"></button>
-        <button id="b-take" data-i18n-title="st.take.t"><span data-i18n="st.take"></span><kbd>⏎</kbd></button>
-        <button id="b-film" data-i18n-title="st.film.t"><span data-i18n="st.film"></span><kbd>F</kbd></button>
-        <button id="b-guide" data-i18n-title="st.guide.t"><span data-i18n="st.guide"></span><kbd>G</kbd></button>
+      <div class="tcol">
+        <div class="tbtns">
+          <button id="b-redo" data-i18n="st.redo" data-i18n-title="st.redo.t"></button>
+          <button id="b-take" data-i18n-title="st.take.t"><span data-i18n="st.take"></span><kbd>⏎</kbd></button>
+          <button id="b-film" data-i18n-title="st.film.t"><span data-i18n="st.film"></span><kbd>F</kbd></button>
+          <button id="b-export" data-i18n-title="st.export.t"><span data-i18n="st.export"></span><kbd>T</kbd></button>
+        </div>
+        <div class="tbtns">
+          <button id="b-prev" data-i18n="st.prev"></button><button id="b-next" data-i18n="st.next"></button>
+        </div>
       </div>
-      <div class="tbtns">
-        <button id="b-prev" data-i18n="st.prev"></button><button id="b-next" data-i18n="st.next"></button>
-        <button id="b-synth" data-i18n="st.useguide" data-i18n-title="st.useguide.t"></button>
-      </div>
+    </div>
+    <div id="tools">
+      <div class="trow" data-i18n-title="tl.synth.t"><span class="tl" data-i18n="tl.synth"></span>
+        <select id="t-voice"></select><button id="b-gen"><span data-i18n="tl.gen"></span><kbd>S</kbd></button></div>
+      <div class="trow" data-i18n-title="tl.band.t"><span class="tl" data-i18n="tl.band"></span>
+        <select id="t-src"></select><button id="b-guide"><span data-i18n="tl.listen"></span><kbd>G</kbd></button></div>
+      <div class="trow" data-i18n-title="tl.dur.t"><span class="tl" data-i18n="tl.dur"></span>
+        <button id="t-shorter" class="sq" data-i18n-title="tl.shorter.t">−</button><span id="t-dur" class="mono"></span><button id="t-longer" class="sq" data-i18n-title="tl.longer.t">+</button>
+        <button id="t-fit1"></button><button id="t-fit2"></button><button id="t-reset" data-i18n="tl.reset" data-i18n-title="tl.reset.t"></button></div>
     </div>
     <div id="takes"></div>
   </footer>
