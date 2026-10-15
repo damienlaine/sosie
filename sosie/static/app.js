@@ -30,7 +30,8 @@ const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")
 
 async function api(path, opts = {}) {
   const post = opts.method === "POST";
-  const r = await fetch(path, { ...opts, headers: { ...(opts.headers || {}), ...(post ? { "X-Sosie": "1" } : {}) } });
+  const proj = post && S.data ? { "X-Sosie-Project": encodeURIComponent(S.data.project.dir) } : {};
+  const r = await fetch(path, { ...opts, headers: { ...(opts.headers || {}), ...(post ? { "X-Sosie": "1", ...proj } : {}) } });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
   return j;
@@ -113,7 +114,11 @@ function toast(msg, ms = 2600) {
 
 const anyOverlay = () => document.querySelector(".ov.on:not(#gate):not(#noiseov)");
 document.querySelectorAll(".ov [data-close]").forEach((b) => (b.onclick = () => b.closest(".ov").classList.remove("on")));
-document.querySelectorAll(".ov").forEach((o) => o.addEventListener("mousedown", (e) => e.target === o && o.id !== "gate" && o.id !== "noiseov" && o.classList.remove("on")));
+document.querySelectorAll(".ov").forEach((o) => o.addEventListener("mousedown", (e) => {
+  if (e.target !== o || o.id === "gate" || o.id === "noiseov" || S.rec) return;
+  if (o.id === "takedlg") teAudio.pause();
+  o.classList.remove("on");
+}));
 
 // ------------------------------------------------------------------ jobs (synthesis on the GPU)
 const JOBS = new Map(); // id -> {onDone, onProgress}
@@ -203,6 +208,7 @@ async function openProjectDialog() {
 }
 
 async function openProject(dir) {
+  if (S.rec) return toast(t("st.busyrec"));
   try {
     G.app = await post("/api/project/open", { dir });
     projectButton();
@@ -329,11 +335,13 @@ $("#fs-dir").addEventListener("keydown", (e) => e.key === "Enter" && browseTo(e.
 const slug = (s) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 $("#pj-name").addEventListener("input", () => {
   const d = $("#pj-dir");
-  if (!d.dataset.touched) d.value = (LS.get("fsdir", "~") || "~") + "/" + slug($("#pj-name").value);
+  const sl = slug($("#pj-name").value);
+  if (!d.dataset.touched) d.value = sl ? (LS.get("fsdir", "~") || "~") + "/" + sl : "";
 });
 $("#pj-dir").addEventListener("input", (e) => (e.target.dataset.touched = "1"));
 $("#pj-create").onclick = async () => {
   $("#pj-err").textContent = "";
+  if (S.rec) return toast(t("st.busyrec"));
   try {
     const body = { name: $("#pj-name").value.trim(), lang: $("#pj-lang").value, dir: $("#pj-dir").value.trim(), film: $("#pj-film").value.trim() || null };
     if ($("#pj-script").value.trim()) body.script = $("#pj-script").value;
@@ -663,8 +671,20 @@ function wav24(chs, sr) {
   return new Blob([buf], { type: "audio/wav" });
 }
 
+function keepLocally(id, blob) {             // a take the server refused: saved in the browser's downloads, never lost
+  const a = el("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `sosie-${id}-${new Date().toISOString().replace(/[:.]/g, "-")}.wav`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+
 function upload(id, blob, info) {
   const sh = byId(id);
+  if (!sh) {
+    keepLocally(id, blob);
+    return toast(t("st.upload.kept"), 6000);
+  }
   const tmp = { n: -Date.now(), tmp: true, status: "envoi" };
   sh.takes.push(tmp);
   refresh(id);
@@ -687,7 +707,8 @@ function upload(id, blob, info) {
     } catch (e) {
       sh.takes = sh.takes.filter((tk) => tk !== tmp);
       refresh(id);
-      toast(t("st.upload.err", { e: e.message || e }));
+      keepLocally(id, blob);
+      toast(t("st.upload.err", { e: e.message || e }) + " " + t("st.upload.kept"), 8000);
     } finally {
       delete S.uploads[id];
     }
@@ -707,7 +728,7 @@ async function poll(id, wantGuide = false) {
       if (!S.data || S.data.project.dir !== dir) return;
       const st = await api(`/api/line/${encodeURIComponent(id)}${wantGuide ? "?guide=1" : ""}`);
       replaceShot(st);
-      if (!st.takes.some((tk) => tk.status === "analyse") && (!wantGuide || st.guide || !st.gdur)) break;
+      if (!st.takes.some((tk) => tk.status === "analyse") && (!wantGuide || st.guide || !st.gdur || st.gtext !== st.text)) break;
     }
   } catch {
   } finally {
@@ -1180,7 +1201,7 @@ $("#te-split").onclick = async () => {
   if (!r || TE.busy || r[0] === 0) return;
   try {
     teBusy(true);
-    const st = await post(`/api/line/${encodeURIComponent(TE.lid)}/split`, { word: TE.words[r[0]].i });
+    const st = await post(`/api/line/${encodeURIComponent(TE.lid)}/split`, { word: TE.words[r[0]].i, take: TE.n });
     $("#takedlg").classList.remove("on");
     TE.busy = false;
     applyState(st, TE.lid);
@@ -1889,7 +1910,7 @@ function go(i, instant = false) {
     film.muted = true;
     film.currentTime = sh.film.vo + 0.4;
   }
-  if (!sh.guide && sh.gdur) poll(sh.id, true);
+  if (!sh.guide && sh.gdur && sh.gtext === sh.text) poll(sh.id, true);
   if (sh.takes.some((x) => !x.tmp && x.status === "ok" && !x.pauses)) api(`/api/line/${encodeURIComponent(sh.id)}?pauses=1`).then(replaceShot).catch(() => {});
 }
 

@@ -49,14 +49,6 @@ def delete(cid):
             shutil.move(path(cid, ext), os.path.join(t, f"clip-{cid}.{ext}"))
 
 
-def save_as(cid, dest):
-    dest = os.path.expanduser(dest)
-    if os.path.isdir(dest):
-        dest = os.path.join(dest, f"{cid}.wav")
-    shutil.copy2(path(cid), dest)
-    return dest
-
-
 def copy_to_clipboard(file_path):
     """Puts the file in the clipboard as a file (text/uri-list): it pastes into a file manager, a chat, an editor's media bin."""
     uri = "file://" + os.path.abspath(file_path)

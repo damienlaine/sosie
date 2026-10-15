@@ -3,6 +3,17 @@ name = "sosie"
 version = "0.1.0"
 description = "Your voice double: a voice-over recording studio, a library of cloned voices and speech synthesis, all local."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Damien Laine" }]
+keywords = ["voice-over", "dubbing", "rythmo", "voice cloning", "text-to-speech", "chatterbox", "whisper"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+  "Topic :: Multimedia :: Sound/Audio :: Capture/Recording",
+]
 requires-python = ">=3.10,<3.13"
 dependencies = [
   "numpy>=1.24,<2",
@@ -12,17 +23,25 @@ dependencies = [
 [project.optional-dependencies]
 # speech synthesis and voice cloning (Chatterbox Multilingual V3, a CUDA GPU strongly advised)
 voice = [
-  # the Multilingual V3 model is not in a PyPI release yet: same commit as the voices were judged with
+  # the Multilingual V3 model is not in a PyPI release yet: installed from its Git commit
   "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git@5de7a54aa4e5e2baadb0182dde554908b48b85c2",
   "pyloudnorm>=0.1",
   "num2words>=0.5.13",
 ]
+# tests (no model needed)
+dev = [
+  "pytest>=8",
+  "num2words>=0.5.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/damienlaine/sosie"
 
 [project.scripts]
 sosie = "sosie.cli:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -30,3 +49,6 @@ packages = ["sosie"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -56,7 +56,10 @@ function voiceCard(v) {
 
 // a second click within 4 s confirms (no browser dialog)
 function confirmTwice(box, msg) {
-  if (box.dataset.armed && Date.now() - +box.dataset.armed < 4000) return true;
+  if (box.dataset.armed && Date.now() - +box.dataset.armed < 4000) {
+    delete box.dataset.armed;
+    return true;
+  }
   box.dataset.armed = Date.now();
   toast(msg);
   return false;

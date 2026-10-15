@@ -29,10 +29,8 @@ LANGS = {"ar": "العربية", "da": "Dansk", "de": "Deutsch", "el": "Ελλη
          "nl": "Nederlands", "no": "Norsk", "pl": "Polski", "pt": "Português", "ru": "Русский", "sv": "Svenska", "sw": "Kiswahili",
          "tr": "Türkçe", "zh": "中文"}
 LATIN = {"da", "de", "en", "es", "fi", "fr", "it", "ms", "nl", "no", "pl", "pt", "sv", "sw", "tr"}
-# Paralinguistic tags present in the model's vocabulary (lower case only). Not documented for this model: effect uncertain.
-# In a French test, [inhale] and [um] made the generation run away (37 s for a 5 s sentence); the quality check rejects such draws.
-TAGS = ["sigh", "laughter", "giggle", "guffaw", "whisper", "clear_throat", "cough", "gasp", "groan", "sniff", "exhale", "inhale",
-        "shhh", "mumble", "humming", "um", "uh"]
+# The model's vocabulary holds paralinguistic tags ([sigh], [laughter]…, lower case only): undocumented for this model, mostly
+# ineffective; in a French test [inhale] and [um] made a draw run away, which the quality check rejects. See the synthesis help.
 
 
 # ------------------------------------------------------------------ what the synthesis reads

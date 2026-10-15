@@ -45,12 +45,21 @@ def parse_text(text):
                 continue
         body = " ".join(x.strip() for x in para.split("\n"))
         n += 1
-        lid = f"L{n:03d}"
         if (m := re.match(r"\[([\w-]+)\]\s*(.+)", body)) and ID.fullmatch(m[1]):
-            lid, body = m[1], m[2]
-        cur["lines"].append({"id": lid, "text": body})
+            cur["lines"].append({"id": m[1], "text": m[2]})
+        else:                                    # no [ID]: one made from the position ("auto": a project may renumber it)
+            cur["lines"].append({"id": f"L{n:03d}", "text": body, "auto": True})
     if cur["lines"] or cur["title"]:
         chapters.append(cur)
+    ids = [ln["id"] for ch in chapters for ln in ch["lines"]]
+    for ch in chapters:                          # a made-up id must not collide with a given one
+        for ln in ch["lines"]:
+            if ln.get("auto") and ids.count(ln["id"]) > 1:
+                k = 1
+                while f"L{k:03d}" in ids:
+                    k += 1
+                ids.append(f"L{k:03d}")
+                ln["id"] = f"L{k:03d}"
     return chapters, None
 
 

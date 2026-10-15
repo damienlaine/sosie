@@ -39,7 +39,13 @@ class App:
 
     # ------------------------------------------------------------ projects
     def open(self, path):
-        p = projects.Project(path, self.work, self.asr)
+        with self.lock:
+            cur = self.project
+        if cur and os.path.realpath(cur.dir) == os.path.realpath(path):
+            cur.reload()                     # same project: in place (running jobs hold this object)
+            p = cur
+        else:
+            p = projects.Project(path, self.work, self.asr)
         p.resume()
         with self.lock:
             self.project = p
@@ -61,7 +67,7 @@ class App:
         return {"version": VERSION, "home": home(), "project": self.project.summary() if self.project else None,
                 "recent": rec, "voices": voices.list_voices(), "langs": tts.LANGS, "prompts": voices.PROMPTS,
                 "engine": {"available": tts.available(), "loaded": self.engine.loaded, "device": self.engine.device},
-                "jobs": [self.job_view(j) for j in self.jobs.values() if j["status"] in ("queued", "running")]}
+                "jobs": [self.job_view(j) for j in list(self.jobs.values()) if j["status"] in ("queued", "running")]}
 
     # ------------------------------------------------------------ jobs on the GPU, one at a time
     def submit(self, kind, fn, **info):
@@ -84,8 +90,11 @@ class App:
             except Exception as e:
                 traceback.print_exc()
                 j["status"], j["error"] = "error", str(e)[:400]
-            for k in [k for k, v in self.jobs.items() if v["status"] in ("done", "error") and time.time() - v["created"] > 3600]:
-                self.jobs.pop(k, None)
+            try:
+                for k in [k for k, v in list(self.jobs.items()) if v["status"] in ("done", "error") and time.time() - v["created"] > 3600]:
+                    self.jobs.pop(k, None)
+            except Exception:
+                traceback.print_exc()
 
     def synth_clip(self, text, vid, lang, settings, tries, check):
         name = voices.conf(vid).get("name", vid)
@@ -104,6 +113,8 @@ class App:
         def run(progress):
             done = []
             for i, lid in enumerate(ids):
+                if lid not in p.byid:            # renamed or deleted meanwhile
+                    continue
                 progress(line=i + 1, lines=len(ids), id=lid)
                 res = self.engine.speak(p.byid[lid]["text"], vid, lang=p.lang, settings=settings, tries=tries, lexicon=p.lexicon(),
                                         progress=lambda s, n, k, t: progress(line=i + 1, lines=len(ids), id=lid,
@@ -115,6 +126,10 @@ class App:
 
 
 APP = None
+
+
+class ProjectChanged(Exception):
+    pass
 
 
 def lines_to_text(p):
@@ -153,8 +168,14 @@ class Handler(BaseHTTPRequestHandler):
         a, b = 0, size - 1
         m = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
         if m and (m[1] or m[2]):
-            a, b = (int(m[1]), int(m[2]) if m[2] else size - 1) if m[1] else (size - int(m[2]), size - 1)
+            a, b = (int(m[1]), int(m[2]) if m[2] else size - 1) if m[1] else (max(0, size - int(m[2])), size - 1)
             b = min(b, size - 1)
+            if a > b or a >= size:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             self.send_response(206)
             self.send_header("Content-Range", f"bytes {a}-{b}/{size}")
         else:
@@ -178,6 +199,13 @@ class Handler(BaseHTTPRequestHandler):
                     left -= len(chunk)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def check_project(self, pr):
+        """The page says which project it shows: a request meant for another project (the server switched to another one
+        since, from another window or the command line) is refused rather than written into the wrong project."""
+        want = unquote(self.headers.get("X-Sosie-Project") or "")
+        if want and os.path.realpath(want) != os.path.realpath(pr.dir):
+            raise ProjectChanged(f"the open project is now {pr.name}: reload the page")
 
     def local(self):
         host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
@@ -251,6 +279,8 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         try:
             return self.post(p, body)
+        except ProjectChanged as e:
+            return self.fail(e, 409)
         except LookupError as e:
             return self.fail(e, 404)
         except (ValueError, FileExistsError, FileNotFoundError, RuntimeError) as e:
@@ -327,17 +357,16 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/synth/unload":
             A.engine.unload()
             return self.send_json(A.app_state())
-        if m := re.fullmatch(r"/api/clips/([\w.-]+)/(delete|copy|save)", p):
+        if m := re.fullmatch(r"/api/clips/([\w.-]+)/(delete|copy)", p):
             if not os.path.exists(clips.path(m[1])):
                 raise LookupError("unknown clip")
             if m[2] == "delete":
                 clips.delete(m[1])
                 return self.send_json(clips.list_clips())
-            if m[2] == "copy":
-                return self.send_json({"tool": clips.copy_to_clipboard(clips.path(m[1])), "path": clips.path(m[1])})
-            return self.send_json({"path": clips.save_as(m[1], js().get("dest") or "~")})
+            return self.send_json({"tool": clips.copy_to_clipboard(clips.path(m[1])), "path": clips.path(m[1])})
         # the open project
         pr = A.need()
+        self.check_project(pr)
         if p == "/api/synthtakes":
             # {"voice", "ids": [...]} or {"voice", "missing": true} (every line without a kept take)
             if not tts.available():
@@ -364,12 +393,21 @@ class Handler(BaseHTTPRequestHandler):
             chapters, _ = scripts.parse(js()["text"], "txt")
             if not any(ch["lines"] for ch in chapters):
                 raise ValueError("the script is empty")
-            ids = [ln["id"] for ch in chapters for ln in ch["lines"]]
-            if len(set(ids)) != len(ids):
+            given = [ln["id"] for ch in chapters for ln in ch["lines"] if not ln.get("auto")]
+            if len(set(given)) != len(given):
                 raise ValueError("two lines have the same id")
+            taken = set(given)
+            for ch in chapters:                  # paragraphs without [ID]: a fresh id, never one of a line or of a takes folder
+                for ln in ch["lines"]:
+                    if ln.pop("auto", False):
+                        ln["id"] = pr.new_id(taken)
+                        taken.add(ln["id"])
+            gone = [ln["id"] for ln in pr.lines if ln["id"] not in taken]
             shutil.copy2(pr.p("script.json"), pr.p("script.json.bak"))
             write_json(pr.p("script.json"), {"chapters": chapters})
             A.open(pr.dir)
+            for lid in gone:
+                A.project.drop_export(lid)
             return self.send_json(A.project.state())
         # editing the script, the video, the timing, the pace
         if (m := re.fullmatch(r"/api/line/([\w-]+)/(edit|delete|rename|split)", p)) and m[1] in pr.byid:
@@ -382,7 +420,7 @@ class Handler(BaseHTTPRequestHandler):
                 pr.rename_line(m[1], d["to"].strip())
                 return self.send_json({**pr.state(), "renamed": d["to"].strip()})
             else:
-                new = pr.split_line(m[1], pos=d.get("pos"), word=d.get("word"), text=d.get("text"))
+                new = pr.split_line(m[1], pos=d.get("pos"), word=d.get("word"), text=d.get("text"), take=d.get("take"))
                 return self.send_json({**pr.state(), "added": new})
             return self.send_json(pr.state())
         if p == "/api/line/add":

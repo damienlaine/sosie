@@ -28,12 +28,11 @@ import numpy as np
 
 from . import audio
 from .asr import align
-from .text import norm, tokens, words_to_tokens
+from .text import TAG, norm, tokens, words_to_tokens
 from .util import home, log, read_json, stamp, write_json
 
 ID = re.compile(r"[\w-]+")
-TAKE_SRC = ("voix", "take", "synth")   # export entries made from a take (not from the imported synthesis)
-NR_LEVELS = (0, 8, 14, 20)
+NR_LEVELS = (0, 8, 14, 20)      # dB: maximum background-noise reduction (none, light, normal, strong)
 PAUSE_KEEP = 0.08    # s: what is left of a pause that is removed (no pause at all sounds glued)
 
 
@@ -50,7 +49,7 @@ def pause_cuts(m):
 
 
 def removed_before(cuts, t):
-    return sum(min(max(t - cs, 0.0), ce - cs) for cs, ce in cuts)      # dB: maximum background-noise reduction (none, light, normal, strong)
+    return sum(min(max(t - cs, 0.0), ce - cs) for cs, ce in cuts)
 DEFAULT_PATHS = {"takes": "takes", "trash": "trash", "noise": "noise.wav", "todo": "todo.json", "guide": "guide",
                  "export": "export", "timing": "timing.json", "guide_words": "guide-words.json"}
 
@@ -81,12 +80,15 @@ def is_project(path):
 def create(path, name, lang, chapters, kind="script", film=None, timing=None, extra=None):
     """New project folder. chapters: [{"title", "lines": [{"id", "text"}]}]."""
     os.makedirs(path, exist_ok=True)
-    if is_project(path):
+    if is_project(path) or os.path.exists(os.path.join(path, "script.json")):
         raise FileExistsError(f"{path} is already a Sosie project")
     ids = [ln["id"] for ch in chapters for ln in ch["lines"]]
     bad = [i for i in ids if not ID.fullmatch(i)]
     if bad or len(set(ids)) != len(ids):
         raise ValueError(f"line ids must be unique and made of letters, digits, - and _: {bad[:5] or 'duplicates'}")
+    for ch in chapters:
+        for ln in ch["lines"]:
+            ln.pop("auto", None)
     conf = {"sosie": 1, "kind": kind, "name": name, "lang": lang, "created": stamp(), **(extra or {})}
     if film:
         conf["film"] = os.path.relpath(os.path.abspath(film), path)
@@ -127,6 +129,17 @@ class Project:
         self.tk = {}                                       # line -> {n: take metadata}
         self.load_takes()
 
+    def reload(self):
+        """Everything again from the folder (the same object: jobs running on it keep it)."""
+        with self.lock:
+            self.conf = read_json(self.p("sosie.json"), self.conf)
+            self.load_script()
+            self.sel = read_json(self.p("selection.json"), {})
+            self.settings = read_json(self.p("settings.json"), {"channel": "auto"})
+            self.gw = read_json(self.path("guide_words"), {})
+            self.tk = {}
+            self.load_takes()
+
     # ------------------------------------------------------------ paths and script
     def p(self, *a):
         return os.path.join(self.dir, *a)
@@ -149,6 +162,10 @@ class Project:
     def film(self):
         f = self.conf.get("film")
         return os.path.normpath(self.p(f)) if f and os.path.isfile(self.p(f)) else None
+
+    def take_srcs(self):
+        """Export entries made from a take (not from the imported synthesis); "export.src" in sosie.json can rename them."""
+        return {"take", "synth", self.conf.get("export", {}).get("src", "take")}
 
     def save_conf(self):
         write_json(self.p("sosie.json"), self.conf)
@@ -174,9 +191,9 @@ class Project:
         write_json(self.p("script.json"), {"chapters": chapters})
         self.load_script()
 
-    def new_id(self):
+    def new_id(self, also=()):
         """L001, L002…: never an id already used, nor one whose takes folder still exists (a deleted line keeps its takes)."""
-        used = set(self.byid) | set(os.listdir(self.path("takes")))
+        used = set(self.byid) | set(os.listdir(self.path("takes"))) | set(also)
         k = 1 + max([int(m[1]) for i in used if (m := re.fullmatch(r"L(\d+)", i))], default=0)
         while f"L{k:03d}" in used:
             k += 1
@@ -250,6 +267,9 @@ class Project:
             if old in lines:
                 lines[new] = lines.pop(old)
                 write_json(self.p("settings.json"), self.settings)
+            for n, m in self.tk.get(new, {}).items():
+                if m.get("status") == "analyse" and self.work:
+                    self.work.put(0, self.analyse, new, n)
         log(f"line {old} renamed {new}")
 
     # ------------------------------------------------------------ editing takes: a passage removed or replaced, a line split
@@ -324,20 +344,19 @@ class Project:
         m = self.tk[lid][n]
         return self.word_cut(m, int(i0)), self.word_cut(m, int(i1) + 1)
 
-    def split_line(self, lid, pos=None, word=None, text=None):
+    def split_line(self, lid, pos=None, word=None, text=None, take=None):
         """Cuts a line in two: at the character pos of its text (between two words), or before the heard word `word` of
         its kept take. The kept take is cut at the same place (from the word timings, in the pause between the two words);
         each half becomes the kept take of its line. Returns the new line's id."""
-        from .asr import align
         with self.lock:
             ln = self.byid[lid]
             orig = text or ln["text"]
             raw = orig.split()
             text = " ".join(raw)
-            n = self.sel.get(lid)
+            n = int(take) if take is not None else self.sel.get(lid)
             m = self.tk.get(lid, {}).get(n)
             m = m if m and m.get("status") == "ok" and m.get("heard") else None
-            tok_raw = [i for i, r in enumerate(raw) if norm(r)]          # raw words that are words (not punctuation)
+            tok_raw = [i for i, r in enumerate(raw) if norm(r) and not TAG.fullmatch(r)]   # words (not punctuation, not [tags])
             words = align(tokens(text), [[w["t"], w["s"], w["e"]] for w in m["heard"]], m["dur"])[0] if m else None
             j = None                                                       # heard word where the second half starts
             if word is not None:
@@ -395,6 +414,14 @@ class Project:
         with self.lock:
             self.lines = [ln for ln in self.lines if ln["id"] != lid]
             self.save_script()
+            self.drop_export(lid)
+            if lid in self.timing:
+                self.timing.pop(lid)
+                write_json(self.path("timing"), self.timing)
+
+    def drop_export(self, lid):
+        """A line that left the script leaves the voice track (its file goes to the trash; its takes stay)."""
+        with self.lock:
             if self.sel.pop(lid, None) is not None:
                 self.save_sel()
             exp = self.path("export")
@@ -407,9 +434,6 @@ class Project:
                 write_json(wpath, words)
             if os.path.exists(os.path.join(exp, lid + ".wav")):
                 shutil.move(os.path.join(exp, lid + ".wav"), os.path.join(self.path("trash"), f"export-{lid}-{time.strftime('%Y%m%d-%H%M%S')}.wav"))
-            if lid in self.timing:
-                self.timing.pop(lid)
-                write_json(self.path("timing"), self.timing)
 
     def set_film(self, path):
         with self.lock:
@@ -579,7 +603,7 @@ class Project:
             meta, words = read_json(dpath, {}), read_json(wpath, {})
             out = os.path.join(exp, lid + ".wav")
             if m is None:
-                if meta.get(lid, {}).get("src") in TAKE_SRC:
+                if meta.get(lid, {}).get("src") in self.take_srcs():
                     gmeta = self.guide_meta().get(lid)
                     gwav = os.path.join(self.path("guide"), lid + ".wav")
                     if gmeta and os.path.exists(gwav) and os.path.realpath(gwav) != os.path.realpath(out):
@@ -749,7 +773,7 @@ class Project:
     def export_version(self, lid):
         """Version of the exported file (to listen to the processed take), if it is a real take."""
         m = read_json(os.path.join(self.path("export"), "durations.json"), {}).get(lid, {})
-        return f'{m.get("take")}-{m.get("denoise")}-{m.get("at")}' if m.get("src") in TAKE_SRC else None
+        return f'{m.get("take")}-{m.get("denoise")}-{m.get("at")}' if m.get("src") in self.take_srcs() else None
 
     # ------------------------------------------------------------ noise profile and settings
     def save_noise(self, body):

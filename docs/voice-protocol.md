@@ -24,7 +24,7 @@ The clone imitates one recording, its **reference**: about 30 seconds of the voi
 ## Other sources
 
 - **Import a recording**: 30 s of clean speech by a single voice, any format ffmpeg reads (cut at 30 s).
-- **From a project**: the kept takes of the open project (in the order of its *To record* list if it has one). This is how the first voice of Sosie was made: real voice-over takes of a film, glued together.
+- **From a project**: the kept takes of the open project (in the order of its *To record* list if it has one): real voice-over takes, glued together, make an excellent reference.
 
 ## Settings of a voice
 

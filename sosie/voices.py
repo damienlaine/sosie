@@ -58,6 +58,8 @@ def root():
 
 
 def vdir(vid):
+    if not projects.ID.fullmatch(vid or ""):
+        raise KeyError(f"bad voice id: {vid!r}")
     return os.path.join(root(), vid)
 
 
@@ -99,7 +101,7 @@ def list_voices():
 
 def create(name, lang, prompts=None, settings=None):
     """New voice: its folder, its settings and the sentences to read for its samples."""
-    base, vid, k = slug(name, 30), None, 1
+    base, k = slug(name, 30), 1
     vid = base
     while os.path.exists(vdir(vid)):
         k += 1
@@ -200,6 +202,6 @@ def build_from_own_takes(vid, worker=None, transcriber=None):
 def import_ref(vid, path, label=None):
     """Reference from an existing recording (any format ffmpeg reads), at most 30 s."""
     y, sr = audio.load_any(path, 48000)
-    if len(y) < 3 * sr:
-        raise ValueError("recording too short: give at least 10 s of speech (30 s is best)")
+    if len(y) < 5 * sr:
+        raise ValueError("recording too short: give at least 5 s of speech (30 s is best)")
     return _set_ref(vid, y[: int(REF_LEN * sr)].astype(np.float64), sr, {"kind": "file", "file": label or os.path.basename(path)})
