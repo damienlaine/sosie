@@ -7,8 +7,8 @@ I18N.fr = {
   "tl.pauses": "Pauses", "tl.pauses.t": "Raccourcir les blancs à l'intérieur de la prise retenue (les mots restent calés)",
   "tl.pcap.none": "intactes", "tl.pinfo": "{n} pauses · −{s} s · cliquez une pause (bande orange) sur la forme d'onde pour la retirer",
   "tl.pcap.done": "Pauses limitées à {c} s : −{s} s", "tl.pcap.off": "Pauses intactes",
-  "tl.pause.t": "Pause de {s} s : cliquer pour la retirer (ou la remettre)", "tl.pause.cut": "Pause de {s} s retirée", "tl.pause.back": "Pause de {s} s remise",
-  "tk.wave.t": "Cliquer pour écouter ; les bandes orange sont les pauses (cliquer pour retirer)", "tk.cut.t": "Temps retiré dans les pauses",
+  "tl.pause.t": "Pause de {s} s : cliquer pour la retirer (ou la remettre)", "tl.pause.cut": "Pause de {s} s retirée : ▶ pour écouter le résultat", "tl.pause.back": "Pause de {s} s remise",
+  "tk.wave.t": "Cliquer pour écouter ; les bandes orange sont les pauses (cliquer pour retirer), le rouge ce qui est retiré", "tk.wave.other.t": "Cliquer pour écouter. Les pauses se retirent sur la prise retenue (★)", "tk.cut.t": "Temps retiré dans les pauses",
   "tl.algo.t": "Vitesse changée par WSOLA (atempo de ffmpeg), sans toucher à la hauteur : le même algorithme que la version anglaise. Jamais Rubber Band (métallique).",
   // pace, video placement, text editing, file picker
   "tl.pslow.t": "Débit plus lent (−5 mots/min)", "tl.pfast.t": "Débit plus rapide (+5 mots/min)", "tl.pace.val": "{w} mots/min",
@@ -30,7 +30,7 @@ I18N.fr = {
   "pj.film.removed": "Vidéo retirée", "pj.choose": "Choisir…", "pj.script.pick": "Choisir un script", "pj.script.pickbtn": "Choisir un fichier…",
   "pk.empty": "Aucun fichier de ce type ici",
   // studio tools (synthetic take, rythmo band, duration)
-  "st.export": "▶ Exportée", "st.export.t": "Écouter la prise retenue telle qu'elle part dans la piste : coupée, débruitée, à niveau, à son tempo",
+  "st.raw": "▶ Brute", "st.raw.t": "Écouter l'enregistrement brut de la prise retenue, sans aucun traitement",
   "tl.synth": "✦ Synthèse", "tl.synth.t": "Faire dire la réplique par une voix de la bibliothèque : une prise de synthèse s'ajoute aux prises",
   "tl.gen": "Générer une prise", "tl.gen.t": "Prise de synthèse de cette réplique avec la voix choisie (S)",
   "tl.band": "Bande rythmo", "tl.band.t": "D'où la bande rythmo tire son rythme : ce qu'elle fait défiler, et quand",
@@ -83,7 +83,7 @@ I18N.fr = {
   "st.nr.0": "Sans débruitage", "st.nr.8": "Débruitage léger", "st.nr.14": "Débruitage normal", "st.nr.20": "Débruitage fort",
   "st.noise": "Profil de bruit", "st.clip.t": "Saturation (cliquer pour effacer)",
   "st.rec.t": "Enregistrer / arrêter (Espace)", "st.redo": "⌫ Refaire", "st.redo.t": "Jeter la dernière prise et recommencer",
-  "st.take": "▶ Prise", "st.take.t": "Écouter la prise retenue", "st.film": "▶ Sur l'image", "st.film.t": "Écouter la prise retenue sur l'image",
+  "st.take": "▶ Prise", "st.take.t": "Écouter la prise retenue telle qu'elle part dans la piste : coupée, débruitée, pauses raccourcies, à sa vitesse", "st.film": "▶ Sur l'image", "st.film.t": "Écouter la prise retenue sur l'image",
   "st.prev": "◀ Réplique", "st.next": "Réplique ▶",
   "st.mic.on": "Micro : {d}", "st.mic.err": "Micro inaccessible : {e}",
   "st.tooshort": "Prise trop courte, ignorée", "st.upload.err": "Envoi de la prise impossible : {e}", "st.discarded": "Prise {n} jetée", "st.kept": "Prise {n} retenue",
@@ -97,7 +97,7 @@ I18N.fr = {
   "st.film.err": "Vidéo illisible : guide sans image",
   "tk.new": "Nouvelle prise", "tk.sending": "envoi…", "tk.take": "Prise {n}", "tk.kept": "retenue", "tk.analysing": "analyse…",
   "tk.error": "erreur", "tk.clipping": "saturation", "tk.low": "niveau faible ({db} dB)", "tk.peak": "crête {db} dB",
-  "tk.raw.t": "Écouter la prise brute", "tk.proc": "traitée", "tk.proc.t": "Écouter la version exportée : coupée, débruitée, mise à niveau (T)",
+  "tk.raw.t": "Écouter l'enregistrement brut, sans traitement (T)", "tk.raw": "brute", "tk.play.track.t": "Écouter la prise telle qu'elle part dans la piste : pauses raccourcies, à sa vitesse, débruitée (⏎)",
   "tk.film": "image", "tk.keep": "Retenir", "tk.keep.t": "Retenir pour la piste ({n})", "tk.discard.t": "Jeter cette prise",
   "noise.title": "Silence…", "noise.text": "Profil du bruit de fond : ne parlez pas, ne bougez pas. <kbd>Échap</kbd> pour annuler.",
   "noise.cancel": "Profil de bruit annulé", "noise.short": "Profil de bruit trop court, ignoré",
@@ -174,9 +174,9 @@ I18N.fr = {
     <dt><kbd>Échap</kbd></dt><dd>Annuler l'enregistrement en cours, ou arrêter l'écoute.</dd>
     <dt><kbd>Suppr</kbd></dt><dd>Jeter la dernière prise.</dd>
     <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Réplique précédente / suivante (aussi <kbd>↑</kbd> <kbd>↓</kbd>).</dd>
-    <dt><kbd>⏎</kbd></dt><dd>Écouter la prise retenue ; ce que vous avez dit défile dans la bande.</dd>
+    <dt><kbd>⏎</kbd></dt><dd>Écouter la prise retenue telle qu'elle part dans la piste (pauses raccourcies, à sa vitesse) ; les mots défilent dans la bande.</dd>
     <dt><kbd>F</kbd></dt><dd>Écouter la prise retenue sur l'image.</dd>
-    <dt><kbd>T</kbd></dt><dd>Écouter la prise telle qu'elle part dans la piste (coupée, débruitée, à niveau, à son tempo).</dd>
+    <dt><kbd>T</kbd></dt><dd>Écouter l'enregistrement brut de la prise retenue, sans traitement.</dd>
     <dt><kbd>S</kbd></dt><dd>Générer une prise de synthèse avec la voix choisie.</dd>
     <dt><kbd>E</kbd></dt><dd>Modifier le texte de la réplique.</dd>
     <dt><kbd>I</kbd></dt><dd>Placer le début de la réplique à l'instant affiché par la vidéo.</dd>
@@ -200,8 +200,8 @@ I18N.en = {
   "tl.pauses": "Pauses", "tl.pauses.t": "Shorten the silences inside the kept take (words stay in sync)",
   "tl.pcap.none": "untouched", "tl.pinfo": "{n} pauses · −{s} s · click a pause (orange band) on the waveform to remove it",
   "tl.pcap.done": "Pauses capped at {c} s: −{s} s", "tl.pcap.off": "Pauses untouched",
-  "tl.pause.t": "{s} s pause: click to remove it (or bring it back)", "tl.pause.cut": "{s} s pause removed", "tl.pause.back": "{s} s pause back",
-  "tk.wave.t": "Click to listen; orange bands are pauses (click to remove)", "tk.cut.t": "Time removed from pauses",
+  "tl.pause.t": "{s} s pause: click to remove it (or bring it back)", "tl.pause.cut": "{s} s pause removed: ▶ to hear the result", "tl.pause.back": "{s} s pause back",
+  "tk.wave.t": "Click to listen; orange bands are pauses (click to remove), red is what is removed", "tk.wave.other.t": "Click to listen. Pauses are removed on the kept take (★)", "tk.cut.t": "Time removed from pauses",
   "tl.algo.t": "Speed changed by WSOLA (ffmpeg atempo), pitch untouched: the same algorithm as the English version. Never Rubber Band (metallic).",
   "tl.pslow.t": "Slower pace (−5 words/min)", "tl.pfast.t": "Faster pace (+5 words/min)", "tl.pace.val": "{w} words/min",
   "tl.pace.t": "Pace of this line for the estimated band. Project: {p} words/min ({how})",
@@ -221,7 +221,7 @@ I18N.en = {
   "pj.film.laid": "Video loaded. Lines are placed one after the other from 0:00: adjust each start with \"Place here\" (I).",
   "pj.film.removed": "Video removed", "pj.choose": "Choose…", "pj.script.pick": "Choose a script", "pj.script.pickbtn": "Choose a file…",
   "pk.empty": "No file of this kind here",
-  "st.export": "▶ Exported", "st.export.t": "Listen to the kept take as it goes into the track: trimmed, denoised, levelled, at its tempo",
+  "st.raw": "▶ Raw", "st.raw.t": "Listen to the raw recording of the kept take, without any processing",
   "tl.synth": "✦ Synthesis", "tl.synth.t": "Have a library voice say the line: a synthetic take joins the takes",
   "tl.gen": "Generate a take", "tl.gen.t": "Synthetic take of this line in the chosen voice (S)",
   "tl.band": "Rythmo band", "tl.band.t": "Where the rythmo band gets its rhythm: what scrolls, and when",
@@ -272,7 +272,7 @@ I18N.en = {
   "st.nr.0": "No denoising", "st.nr.8": "Light denoising", "st.nr.14": "Normal denoising", "st.nr.20": "Strong denoising",
   "st.noise": "Noise profile", "st.clip.t": "Clipping (click to clear)",
   "st.rec.t": "Record / stop (Space)", "st.redo": "⌫ Redo", "st.redo.t": "Discard the last take and start again",
-  "st.take": "▶ Take", "st.take.t": "Listen to the kept take", "st.film": "▶ On picture", "st.film.t": "Listen to the kept take on the picture",
+  "st.take": "▶ Take", "st.take.t": "Listen to the kept take as it goes into the track: trimmed, denoised, pauses shortened, at its speed", "st.film": "▶ On picture", "st.film.t": "Listen to the kept take on the picture",
   "st.prev": "◀ Line", "st.next": "Line ▶",
   "st.mic.on": "Microphone: {d}", "st.mic.err": "Microphone unavailable: {e}",
   "st.tooshort": "Take too short, ignored", "st.upload.err": "Cannot send the take: {e}", "st.discarded": "Take {n} discarded", "st.kept": "Take {n} kept",
@@ -286,7 +286,7 @@ I18N.en = {
   "st.film.err": "Unreadable video: guide without picture",
   "tk.new": "New take", "tk.sending": "sending…", "tk.take": "Take {n}", "tk.kept": "kept", "tk.analysing": "analysing…",
   "tk.error": "error", "tk.clipping": "clipping", "tk.low": "low level ({db} dB)", "tk.peak": "peak {db} dB",
-  "tk.raw.t": "Listen to the raw take", "tk.proc": "processed", "tk.proc.t": "Listen to the exported version: trimmed, denoised, levelled (T)",
+  "tk.raw.t": "Listen to the raw recording, unprocessed (T)", "tk.raw": "raw", "tk.play.track.t": "Listen to the take as it goes into the track: pauses shortened, at its speed, denoised (⏎)",
   "tk.film": "picture", "tk.keep": "Keep", "tk.keep.t": "Keep for the track ({n})", "tk.discard.t": "Discard this take",
   "noise.title": "Silence…", "noise.text": "Background noise profile: don't speak, don't move. <kbd>Esc</kbd> to cancel.",
   "noise.cancel": "Noise profile cancelled", "noise.short": "Noise profile too short, ignored",
@@ -358,9 +358,9 @@ I18N.en = {
     <dt><kbd>Esc</kbd></dt><dd>Cancel the current recording, or stop listening.</dd>
     <dt><kbd>Del</kbd></dt><dd>Discard the last take.</dd>
     <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next line (also <kbd>↑</kbd> <kbd>↓</kbd>).</dd>
-    <dt><kbd>⏎</kbd></dt><dd>Listen to the kept take; what you said scrolls in the band.</dd>
+    <dt><kbd>⏎</kbd></dt><dd>Listen to the kept take as it goes into the track (pauses shortened, at its speed); the words scroll in the band.</dd>
     <dt><kbd>F</kbd></dt><dd>Listen to the kept take on the picture.</dd>
-    <dt><kbd>T</kbd></dt><dd>Listen to the take as it goes into the track (trimmed, denoised, levelled, at its tempo).</dd>
+    <dt><kbd>T</kbd></dt><dd>Listen to the raw recording of the kept take, unprocessed.</dd>
     <dt><kbd>S</kbd></dt><dd>Generate a synthetic take in the chosen voice.</dd>
     <dt><kbd>E</kbd></dt><dd>Edit the line's text.</dd>
     <dt><kbd>I</kbd></dt><dd>Place the line's start at the video's current time.</dd>

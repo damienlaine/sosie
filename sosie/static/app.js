@@ -805,22 +805,27 @@ function playRythmo() {
   updateButtons();
 }
 
-function playTake(n, onFilm = false) {
+// A take is heard as it goes into the track (trimmed, denoised, pauses shortened, at its tempo) when it is the kept one;
+// raw otherwise, or on demand ("raw" = the recording as it is).
+function playTake(n, onFilm = false, raw = false) {
   const sh = cur();
   const tk = n != null ? sh.takes.find((x) => x.n === n) : selTake(sh) || realTakes(sh).at(-1);
   if (!tk || tk.tmp) return;
   stopPlay();
-  const [a, b] = tk.trim || [0, tk.dur || 1e9];
-  player.src = `/takes/${encodeURIComponent(sh.id)}/${tk.file}?v=${encodeURIComponent(tk.created || "")}`;
-  player.currentTime = Math.max(0, a - 0.05);
-  const words = tk.heard || [];
+  const asTrack = !raw && tk.n === sh.sel && !!sh.export && tk.status === "ok";
+  const tr = asTrack ? takeTrack(sh, tk) : null;
+  const [a, b] = asTrack ? [0, 1e9] : tk.trim || [0, tk.dur || 1e9];
+  player.src = asTrack ? tr.audio.url : `/takes/${encodeURIComponent(sh.id)}/${tk.file}?v=${encodeURIComponent(tk.created || "")}`;
+  player.currentTime = Math.max(0, a - (asTrack ? 0 : 0.05));
+  const words = asTrack ? tr.words : fixWords(tk.heard || [], tk.pauses);
+  const kind = raw ? "raw" : onFilm ? "film" : "take";
   if (onFilm && hasFilm(sh)) {
     let started = false;
     film.muted = true;
     film.currentTime = Math.max(0, sh.film.vo - 1.2);
     film.play().catch(() => {});
     S.play = {
-      kind: "film", n: tk.n, words,
+      kind, n: tk.n, words,
       t: () => (started ? player.currentTime : film.currentTime - sh.film.vo + a),
       step: () => {
         if (!started && film.currentTime >= sh.film.vo) {
@@ -833,28 +838,17 @@ function playTake(n, onFilm = false) {
     };
   } else {
     player.play().catch(() => {});
-    S.play = { kind: "take", n: tk.n, words, t: () => player.currentTime, done: () => player.ended || player.currentTime >= b };
+    S.play = { kind, n: tk.n, words, t: () => player.currentTime, done: () => player.ended || player.currentTime >= b };
   }
   setStrip(words);
   updateButtons();
   renderTakes();
 }
 
-function playExport() {
+function playRaw() {
   const sh = cur();
-  const tk = selTake(sh);
-  if (!tk || tk.status !== "ok" || !sh.export) return toast(t("st.noexport"));
-  stopPlay();
-  const a = tk.trim[0];
-  player.src = `/export/${encodeURIComponent(sh.id)}.wav?v=${encodeURIComponent(sh.export)}`;
-  player.currentTime = 0;
-  player.play().catch(() => {});
-  const f = tempoOf(tk);
-  const words = (tk.heard || []).map((w) => ({ ...w, s: (w.s - a) / f, e: (w.e - a) / f }));
-  S.play = { kind: "proc", n: tk.n, words, t: () => player.currentTime, done: () => player.ended };
-  setStrip(words);
-  updateButtons();
-  renderTakes();
+  const tk = selTake(sh) || realTakes(sh).at(-1);
+  if (tk) playTake(tk.n, false, true);
 }
 
 // ------------------------------------------------------------------ tools: synthetic take, band source, duration
@@ -1037,6 +1031,21 @@ function cutsOf(tk) {
   }
   return out;
 }
+// Whisper often starts the word after a pause inside the pause (its span then covers the silence): such a word starts
+// where the pause ends; a word whose span runs into a following pause ends where the pause starts.
+function fixWords(words, pauses) {
+  if (!pauses?.length) return words;
+  return words.map((w) => {
+    let { s, e } = w;
+    for (const [ps, pe] of pauses) {
+      if (ps >= s - 0.05 && pe <= e + 0.05 && pe > s) {
+        if (ps - s < 0.3) s = Math.min(pe, e - 0.05);
+        else if (e - pe < 0.3) e = Math.max(ps, s + 0.05);
+      }
+    }
+    return { ...w, s, e };
+  });
+}
 const removedBefore = (cuts, x) => cuts.reduce((acc, [cs, ce]) => acc + Math.min(Math.max(x - cs, 0), ce - cs), 0);
 const cutTotal = (tk) => cutsOf(tk).reduce((acc, [cs, ce]) => acc + ce - cs, 0);
 const effDur = (tk) => (speechDur(tk) - cutTotal(tk)) / tempoOf(tk);   // as it sounds in the track
@@ -1049,7 +1058,7 @@ function takeTrack(sh, tk) {
   const cuts = exp ? cutsOf(tk).map(([cs, ce]) => [cs - a, ce - a]) : [];
   const at = (x) => { const r = Math.max(0, x - a); return (r - removedBefore(cuts, r)) / f; };
   return {
-    words: (tk.heard || []).filter((w) => LETTER.test(w.t)).map((w) => ({ t: w.t, s: at(w.s), e: at(w.e) })),
+    words: fixWords((tk.heard || []).filter((w) => LETTER.test(w.t)), tk.pauses).map((w) => ({ t: w.t, s: at(w.s), e: at(w.e) })),
     audio: exp ? { url: `/export/${encodeURIComponent(sh.id)}.wav?v=${encodeURIComponent(sh.export)}`, a: 0 }
       : { url: `/takes/${encodeURIComponent(sh.id)}/${tk.file}?v=${encodeURIComponent(tk.created || "")}`, a },
     dur: exp ? effDur(tk) : speechDur(tk),
@@ -1481,7 +1490,7 @@ function takeCard(sh, tk) {
   cv.width = 520;
   cv.height = 80;
   const pauseAt = (ev) => {
-    if (!tk.pauses || !tk.dur) return null;
+    if (!tk.pauses || !tk.dur || tk.n !== sh.sel) return null;  // pauses are edited on the kept take, the one in the track
     const r = cv.getBoundingClientRect(), x = ((ev.clientX - r.left) / r.width) * tk.dur, tol = (4 / r.width) * tk.dur;
     return tk.pauses.find(([s, e]) => x >= s - tol && x <= e + tol) || null;
   };
@@ -1490,12 +1499,12 @@ function takeCard(sh, tk) {
     if (!p) return playTake(tk.n);
     const was = (tk.pause_drop || []).some((x) => x.toFixed(2) === p[0].toFixed(2));
     await setPauses(tk, { toggle: p[0] });
-    toast(t(was ? "tl.pause.back" : "tl.pause.cut", { s: (p[1] - p[0]).toFixed(2) }));
+    toast(t(was ? "tl.pause.back" : "tl.pause.cut", { s: (p[1] - p[0]).toFixed(2) }), 3500);
   };
   cv.onmousemove = (ev) => {
     const p = pauseAt(ev);
     cv.style.cursor = p ? "pointer" : "default";
-    cv.title = p ? t("tl.pause.t", { s: (p[1] - p[0]).toFixed(2) }) : t("tk.wave.t");
+    cv.title = p ? t("tl.pause.t", { s: (p[1] - p[0]).toFixed(2) }) : t(tk.n === sh.sel ? "tk.wave.t" : "tk.wave.other.t");
   };
   c.append(cv);
   drawWave(cv, tk);
@@ -1525,11 +1534,12 @@ function takeCard(sh, tk) {
     b.onclick = fn;
     tb.append(b);
   };
-  const raw = S.play && S.play.n === tk.n && S.play.kind !== "proc";
-  bt(raw ? "■" : "▶", () => (raw ? stopPlay() : playTake(tk.n)), t("tk.raw.t"));
-  if (sh.sel === tk.n && tk.status === "ok" && sh.export) {
-    const on = S.play?.kind === "proc";
-    bt(on ? "■ " + t("tk.proc") : "▶ " + t("tk.proc"), () => (on ? stopPlay() : playExport()), t("tk.proc.t"));
+  const kept = sh.sel === tk.n && tk.status === "ok" && !!sh.export;
+  const on = S.play && S.play.n === tk.n && S.play.kind !== "raw";
+  bt(on ? "■" : "▶", () => (on ? stopPlay() : playTake(tk.n)), t(kept ? "tk.play.track.t" : "tk.raw.t"));
+  if (kept) {
+    const rawOn = S.play && S.play.n === tk.n && S.play.kind === "raw";
+    bt(rawOn ? "■ " + t("tk.raw") : "▶ " + t("tk.raw"), () => (rawOn ? stopPlay() : playTake(tk.n, false, true)), t("tk.raw.t"));
   }
   if (hasFilm(sh)) bt("▶ " + t("tk.film"), () => playTake(tk.n, true), t("st.film.t"));
   if (sh.sel !== tk.n) bt("★ " + t("tk.keep"), () => selectTake(tk.n), t("tk.keep.t", { n: tk.n }));
@@ -1575,7 +1585,7 @@ function updateButtons() {
   $("#b-take").classList.toggle("on", kind === "take");
   $("#b-film").classList.toggle("on", kind === "film");
   $("#b-guide").classList.toggle("on", kind === "guide");
-  $("#b-export").classList.toggle("on", kind === "proc");
+  $("#b-export").classList.toggle("on", kind === "raw");
   const sh = cur();
   $("#b-film").disabled = !hasFilm(sh);
   renderTools();
@@ -1658,7 +1668,7 @@ $("#b-redo").onclick = () => (S.rec ? stopRec(false, true) : discardTake(null, t
 $("#b-take").onclick = () => (S.play?.kind === "take" ? stopPlay() : playTake());
 $("#b-film").onclick = () => (S.play?.kind === "film" ? stopPlay() : playTake(null, true));
 $("#b-guide").onclick = () => (S.play?.kind === "guide" ? stopPlay() : playRythmo());
-$("#b-export").onclick = () => (S.play?.kind === "proc" ? stopPlay() : playExport());
+$("#b-export").onclick = () => (S.play?.kind === "raw" ? stopPlay() : playRaw());
 $("#b-gen").onclick = genSynth;
 $("#t-src").onchange = (e) => {
   e.target.blur();
@@ -1786,7 +1796,7 @@ document.addEventListener("keydown", (e) => {
     case "s": case "S": genSynth(); break;
     case "i": case "I": placeHere(); break;
     case "e": case "E": editLine(); break;
-    case "t": case "T": S.play?.kind === "proc" ? stopPlay() : playExport(); break;
+    case "t": case "T": S.play?.kind === "raw" ? stopPlay() : playRaw(); break;
     case "m": case "M": setMode(S.mode === "texte" ? "rythmo" : "texte"); break;
     case "v": case "V": setFilm(!S.film); break;
     case "+": case "=": S.pxs = clamp(S.pxs * 1.15, 200, 900); LS.set("pxs", S.pxs); if (!S.play) setStrip(bandWords(cur())); break;
