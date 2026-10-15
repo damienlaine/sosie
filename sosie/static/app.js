@@ -617,6 +617,7 @@ function finishRec() {
   const r = S.rec;
   S.rec = null;
   if (r.noise) return finishNoise(r);
+  if (r.punch) return finishPunch(r);
   document.body.classList.remove("recording");
   $("#count").textContent = "";
   clearKaraoke();
@@ -993,6 +994,242 @@ async function genSynth() {
     toast(t("err", { e: e.message }));
   }
 }
+
+// ------------------------------------------------------------------ take editor: a passage removed, replaced by the synthesis
+// or by a new recording, or the line cut before it. Every change makes a new take (kept); the previous one stays.
+const TE = { lid: null, n: null, a: null, b: null, words: [], busy: false };
+const teAudio = new Audio();
+let teStop = null;
+
+function openTakeEditor(n) {
+  if (!S.data || !S.lines.length || S.rec) return;
+  const sh = cur();
+  const tk = n != null ? sh.takes.find((x) => x.n === n) : selTake(sh);
+  if (!tk || tk.status !== "ok") return toast(t("te.none"));
+  stopPlay();
+  Object.assign(TE, { lid: sh.id, n: tk.n, a: null, b: null, busy: false });
+  renderTakeEditor();
+  $("#takedlg").classList.add("on");
+}
+const teTake = () => byId(TE.lid)?.takes.find((x) => x.n === TE.n);
+const teRange = () => (TE.a == null ? null : [Math.min(TE.a, TE.b), Math.max(TE.a, TE.b)]);
+
+function renderTakeEditor() {
+  const tk = teTake();
+  if (!tk) return;
+  $("#te-title").textContent = `${TE.lid} · ${t("tk.take", { n: tk.n })} · ${tk.kind === "synth" ? "✦ " + (tk.voiceName || tk.voice) : "🎙 " + t("tk.mic")}`;
+  TE.words = fixWords(tk.heard || [], tk.pauses).map((w, i) => ({ ...w, i })).filter((w) => LETTER.test(w.t));
+  const box = $("#te-words");
+  box.innerHTML = "";
+  const r = teRange();
+  TE.words.forEach((w, k) => {
+    const sp = el("span", r && k >= r[0] && k <= r[1] ? "on" : "", esc(w.t));
+    sp.title = `${w.s.toFixed(2)} s`;
+    sp.onclick = (e) => teSelect(k, e.shiftKey);
+    box.append(sp);
+  });
+  const vs = studioVoices();
+  const tv = $("#te-voice");
+  const want = tk.kind === "synth" ? tk.voice : $("#t-voice").value;
+  tv.innerHTML = vs.map((v) => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join("") || `<option value="">${esc(t("tl.novoice"))}</option>`;
+  tv.value = vs.some((v) => v.id === want) ? want : vs[0]?.id || "";
+  teRecLabel();
+  teSelInfo();
+  teDraw();
+}
+
+function teSelect(k, extend) {
+  if (TE.busy || k < 0 || k >= TE.words.length) return;
+  if (extend && TE.a != null) TE.b = k;
+  else TE.a = TE.b = k;
+  const r = teRange();
+  $("#te-text").value = TE.words.slice(r[0], r[1] + 1).map((w) => w.t).join(" ");
+  document.querySelectorAll("#te-words span").forEach((sp, i) => sp.classList.toggle("on", i >= r[0] && i <= r[1]));
+  teSelInfo();
+  teDraw();
+}
+
+function teSelInfo() {
+  const r = teRange();
+  $("#te-acts").classList.toggle("off", !r || TE.busy);
+  $("#te-play").textContent = "▶ " + t(r ? "te.play.sel" : "te.play.take");
+  if (!r) {
+    $("#te-sel").textContent = t("te.pick");
+    $("#te-split-h").textContent = "";
+    return;
+  }
+  const w0 = TE.words[r[0]], w1 = TE.words[r[1]];
+  $("#te-sel").textContent = t("te.sel", { n: r[1] - r[0] + 1, s: (w1.e - w0.s).toFixed(2), a: w0.s.toFixed(2) });
+  $("#te-split-h").textContent = t("te.split.h", { w: w0.t });
+  $("#te-split").disabled = r[0] === 0;
+}
+
+function teDraw() {
+  const tk = teTake(), cv = $("#te-wave");
+  drawWave(cv, tk);
+  const r = teRange();
+  const g = cv.getContext("2d"), W = cv.width, H = cv.height, X = (x) => (x / tk.dur) * W;
+  if (r) {
+    const s = TE.words[r[0]].s, e = TE.words[r[1]].e;
+    g.fillStyle = "rgba(255,255,255,.16)";
+    g.fillRect(X(s), 0, Math.max(2, X(e) - X(s)), H);
+    g.fillStyle = "#fff";
+    g.fillRect(X(s), 0, 2, H);
+    g.fillRect(X(e) - 2, 0, 2, H);
+  }
+  g.fillStyle = "rgba(232,238,243,.35)";
+  for (const w of TE.words) g.fillRect(X(w.s), H - 10, 1, 10);
+}
+
+$("#te-wave").onclick = (ev) => {
+  const tk = teTake();
+  if (!tk || !TE.words.length) return;
+  const rc = ev.target.getBoundingClientRect(), x = ((ev.clientX - rc.left) / rc.width) * tk.dur;
+  let k = TE.words.findIndex((w) => x >= w.s && x <= w.e);
+  if (k < 0) k = TE.words.reduce((best, w, i) => (Math.abs(w.s - x) < Math.abs(TE.words[best].s - x) ? i : best), 0);
+  teSelect(k, ev.shiftKey);
+};
+
+function tePlay(s, e) {
+  const tk = teTake();
+  clearInterval(teStop);
+  teAudio.src = `/takes/${encodeURIComponent(TE.lid)}/${tk.file}?v=${encodeURIComponent(tk.created || "")}`;
+  teAudio.currentTime = Math.max(0, s);
+  teAudio.play().catch(() => {});
+  teStop = setInterval(() => {
+    const now = teAudio.currentTime;
+    document.querySelectorAll("#te-words span").forEach((sp, i) => sp.classList.toggle("now", TE.words[i].s <= now && now < TE.words[i].e + 0.05));
+    if (now >= e || teAudio.ended) {
+      teAudio.pause();
+      clearInterval(teStop);
+      document.querySelectorAll("#te-words span.now").forEach((sp) => sp.classList.remove("now"));
+    }
+  }, 40);
+}
+$("#te-play").onclick = () => {
+  const r = teRange(), tk = teTake();
+  if (r) tePlay(Math.max(0, TE.words[r[0]].s - 0.4), TE.words[r[1]].e + 0.4);
+  else tePlay(tk.trim[0], tk.trim[1]);
+};
+$("#te-all").onclick = () => {
+  if (!TE.words.length) return;
+  TE.a = 0;
+  TE.b = TE.words.length - 1;
+  teSelect(TE.b, true);
+};
+
+function teBusy(on, msg) {
+  TE.busy = on;
+  $("#te-status").innerHTML = on ? `<span class="spin"></span> ${esc(msg || t("te.working"))}` : esc(msg || t("te.hint"));
+  teSelInfo();
+}
+
+// after an edit: the new take is analysed, then the editor shows it
+async function teFollow(n, msg) {
+  TE.n = n;
+  TE.a = TE.b = null;
+  teBusy(true, t("te.analysing"));
+  for (let i = 0; i < 200; i++) {
+    const st = await api(`/api/line/${encodeURIComponent(TE.lid)}`);
+    replaceShot(st);
+    const tk = st.takes.find((x) => x.n === n);
+    if (tk && tk.status !== "analyse") break;
+    await sleep(800);
+  }
+  teBusy(false, msg);
+  renderTakeEditor();
+}
+
+function teBody() {
+  const r = teRange();
+  return { i0: TE.words[r[0]].i, i1: TE.words[r[1]].i };
+}
+
+$("#te-delete").onclick = async () => {
+  if (!teRange() || TE.busy) return;
+  try {
+    teBusy(true);
+    const res = await post(`/api/takeedit/${encodeURIComponent(TE.lid)}/${TE.n}`, { op: "delete", ...teBody() });
+    await teFollow(res.take.n, t("te.done.del", { n: res.take.n }));
+  } catch (e) {
+    teBusy(false, t("err", { e: e.message }));
+  }
+};
+
+$("#te-synth").onclick = async () => {
+  const text = $("#te-text").value.trim(), vid = $("#te-voice").value;
+  if (!teRange() || TE.busy || !text || !vid) return;
+  try {
+    teBusy(true, t(G.app.engine.loaded ? "sy.queued" : "sy.loading"));
+    const job = await post(`/api/takeedit/${encodeURIComponent(TE.lid)}/${TE.n}`, { op: "synth", text, voice: vid, ...teBody() });
+    watchJob(job, {
+      onProgress: (j) => j.progress?.sentence && teBusy(true, t("sy.progress", { s: j.progress.sentence, n: j.progress.sentences, d: j.progress.draw, of: j.progress.draws })),
+      onDone: (res) => {
+        G.app.engine.loaded = true;
+        teFollow(res.take.n, t("te.done.synth", { n: res.take.n }));
+      },
+      onError: (e) => teBusy(false, t("err", { e })),
+    });
+  } catch (e) {
+    teBusy(false, t("err", { e: e.message }));
+  }
+};
+
+$("#te-split").onclick = async () => {
+  const r = teRange();
+  if (!r || TE.busy || r[0] === 0) return;
+  try {
+    teBusy(true);
+    const st = await post(`/api/line/${encodeURIComponent(TE.lid)}/split`, { word: TE.words[r[0]].i });
+    $("#takedlg").classList.remove("on");
+    TE.busy = false;
+    applyState(st, TE.lid);
+    toast(t("ed.split.take", { id: st.added }), 5000);
+  } catch (e) {
+    teBusy(false, t("err", { e: e.message }));
+  }
+};
+
+// punch-in: a new recording replaces the passage
+$("#te-rec").onclick = () => {
+  if (S.rec?.punch) return stopRec(true);
+  if (!teRange() || TE.busy || S.rec) return;
+  if (needMic()) return;
+  teAudio.pause();
+  S.rec = { punch: { lid: TE.lid, n: TE.n, ...teBody() }, chunks: [], len: 0, t0: S.ctx.currentTime, stopping: false };
+  S.node.port.postMessage("start");
+  document.body.classList.add("recording");
+  $("#te-rec").textContent = "■ " + t("te.mic.stop");
+};
+function teRecLabel() {
+  $("#te-rec").textContent = "● " + t("te.mic.go");
+}
+
+async function finishPunch(r) {
+  document.body.classList.remove("recording");
+  teRecLabel();
+  if (!r.keep) return;
+  const sr = S.ctx.sampleRate, drop = Math.round(0.12 * sr);
+  const chs = r.chunks.map((list) => {
+    const a = joinChunks(list);
+    return a.subarray(0, Math.max(0, a.length - drop));
+  });
+  if (!chs.length || chs[0].length < sr * 0.2) return toast(t("st.tooshort"));
+  const rms = chs.map((a) => a.reduce((acc, x) => acc + x * x, 0));
+  const k = rms.indexOf(Math.max(...rms));
+  try {
+    teBusy(true);
+    const p = r.punch;
+    const res = await post(`/api/takeedit/${encodeURIComponent(p.lid)}/${p.n}/mic?i0=${p.i0}&i1=${p.i1}`, wav24([chs[k], chs[k]], sr), { "Content-Type": "audio/wav" });
+    await teFollow(res.take.n, t("te.done.mic", { n: res.take.n }));
+  } catch (e) {
+    teBusy(false, t("err", { e: e.message }));
+  }
+}
+document.querySelector("#takedlg [data-close]").addEventListener("click", () => {
+  teAudio.pause();
+  if (S.rec?.punch) stopRec(false);
+});
 
 // ------------------------------------------------------------------ rythmo band and karaoke
 function estimate(tok, dur) {
@@ -1371,11 +1608,13 @@ function editLine(add = false) {
     restore = () => {};
   }
   const ed = el("div", "editor");
+  const idrow = el("div", "idrow", `<span>${t("ed.id")}</span><input type="text" spellcheck="false" value="${add ? "" : esc(sh.id)}" placeholder="${esc(t("ed.id.auto"))}"/><span>${t("ed.id.h")}</span>`);
+  const idin = idrow.querySelector("input");
   const ta = el("textarea");
   ta.value = add ? "" : sh.text;
   ta.placeholder = t("ed.ph");
-  const bar = el("div", "row", `<button class="primary">${t("ed.save")}</button><button>${t("ed.cancel")}</button><span class="muted">${t("ed.hint")}</span>${S.data.scriptFrom ? `<span class="warn">${esc(t("ed.from", { f: S.data.scriptFrom }))}</span>` : ""}`);
-  ed.append(ta, bar);
+  const bar = el("div", "row", `<button class="primary">${t("ed.save")}</button><button>${t("ed.cancel")}</button>${add ? "" : `<button title="${esc(t("ed.split.t"))}">✂ ${t("ed.split")}</button>`}<span class="muted">${t("ed.hint")}</span>${S.data.scriptFrom ? `<span class="warn">${esc(t("ed.from", { f: S.data.scriptFrom }))}</span>` : ""}`);
+  ed.append(idrow, ta, bar);
   host.append(ed);
   const fit = () => {
     ta.style.height = "auto";
@@ -1388,26 +1627,48 @@ function editLine(add = false) {
   };
   const save = async () => {
     const text = ta.value.trim();
+    const id = idin.value.trim();
     if (!text) return close();
     try {
       if (add) {
-        const st = await post("/api/line/add", { after: sh.id, text });
+        const st = await post("/api/line/add", { after: sh.id, text, id: id || null });
         G.editing = false;
         applyState(st, st.added);
         toast(t("ed.added", { id: st.added }));
       } else {
-        if (text !== sh.text) {
-          G.editing = false;
-          applyState(await post(`/api/line/${encodeURIComponent(sh.id)}/edit`, { text }));
-          toast(t("ed.saved"));
-        } else close();
+        let lid = sh.id, st = null;
+        if (id && id !== sh.id) {
+          st = await post(`/api/line/${encodeURIComponent(sh.id)}/rename`, { to: id });
+          lid = id;
+        }
+        if (text !== sh.text) st = await post(`/api/line/${encodeURIComponent(lid)}/edit`, { text });
+        if (!st) return close();
+        G.editing = false;
+        applyState(st, lid);
+        toast(lid !== sh.id ? t("ed.renamed", { a: sh.id, b: lid }) : t("ed.saved"));
       }
     } catch (e) {
-      toast(t("err", { e: e.message }));
+      toast(t("err", { e: e.message }), 5000);
+    }
+  };
+  const split = async () => {
+    try {
+      const st = await post(`/api/line/${encodeURIComponent(sh.id)}/split`, { pos: ta.selectionStart, text: ta.value });
+      G.editing = false;
+      applyState(st, sh.id);
+      toast(t(selTake(sh) ? "ed.split.take" : "ed.split.done", { id: st.added }), 5000);
+    } catch (e) {
+      toast(t("err", { e: e.message }), 5000);
     }
   };
   bar.children[0].onclick = save;
   bar.children[1].onclick = close;
+  if (!add) bar.children[2].onclick = split;
+  idin.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") save();
+    else if (e.key === "Escape") close();
+  });
   ta.addEventListener("input", fit);
   ta.addEventListener("keydown", (e) => {
     e.stopPropagation();
@@ -1541,6 +1802,7 @@ function takeCard(sh, tk) {
     const rawOn = S.play && S.play.n === tk.n && S.play.kind === "raw";
     bt(rawOn ? "■ " + t("tk.raw") : "▶ " + t("tk.raw"), () => (rawOn ? stopPlay() : playTake(tk.n, false, true)), t("tk.raw.t"));
   }
+  if (tk.status === "ok") bt("✂ " + t("tk.edit"), () => openTakeEditor(tk.n), t("tk.edit.t"));
   if (hasFilm(sh)) bt("▶ " + t("tk.film"), () => playTake(tk.n, true), t("st.film.t"));
   if (sh.sel !== tk.n) bt("★ " + t("tk.keep"), () => selectTake(tk.n), t("tk.keep.t", { n: tk.n }));
   bt("🗑", () => discardTake(tk.n, false), t("tk.discard.t"));
@@ -1751,7 +2013,13 @@ film.addEventListener("error", () => {
 });
 
 document.addEventListener("keydown", (e) => {
+  if (S.rec?.punch && (e.key === " " || e.key === "Escape")) {   // punch-in from the take editor
+    e.preventDefault();
+    stopRec(e.key === " ");
+    return;
+  }
   if (e.key === "Escape" && anyOverlay()) {
+    if (anyOverlay().id === "takedlg") teAudio.pause();
     anyOverlay().classList.remove("on");
     return;
   }
@@ -1796,6 +2064,7 @@ document.addEventListener("keydown", (e) => {
     case "s": case "S": genSynth(); break;
     case "i": case "I": placeHere(); break;
     case "e": case "E": editLine(); break;
+    case "x": case "X": openTakeEditor(); break;
     case "t": case "T": S.play?.kind === "raw" ? stopPlay() : playRaw(); break;
     case "m": case "M": setMode(S.mode === "texte" ? "rythmo" : "texte"); break;
     case "v": case "V": setFilm(!S.film); break;

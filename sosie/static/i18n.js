@@ -4,6 +4,21 @@
 const I18N = { lang: "fr" };
 I18N.fr = {
   "tab.studio": "Studio", "tab.voices": "Voix", "tab.synth": "Synthèse",
+  // take editor, line ids, split
+  "te.title": "Éditer la prise", "te.all": "Tout sélectionner", "te.none": "Pas de prise analysée à éditer",
+  "te.del": "🗑 Supprimer le passage", "te.del.h": "les mots sélectionnés disparaissent de la prise", "te.del.go": "Supprimer",
+  "te.synth": "✦ Remplacer par la synthèse", "te.synth.go": "Générer et remplacer",
+  "te.mic": "🎙 Remplacer en enregistrant", "te.mic.h": "dites seulement le passage ; Espace ou ■ pour arrêter, Échap pour annuler", "te.mic.go": "Enregistrer", "te.mic.stop": "Arrêter",
+  "te.split": "✂ Couper la réplique", "te.split.h": "avant « {w} » : la suite devient une nouvelle réplique, avec sa partie de la prise", "te.split.go": "Couper ici",
+  "te.hint": "Cliquez un mot (ou la forme d'onde), Maj+clic pour étendre la sélection. Chaque modification crée une nouvelle prise, retenue ; l'ancienne reste dans la liste.",
+  "te.play.sel": "Écouter le passage", "te.play.take": "Écouter la prise", "te.pick": "Sélectionnez un passage : cliquez un mot, Maj+clic pour aller jusqu'à un autre.",
+  "te.sel": "{n} mot(s) · {s} s · à {a} s", "te.working": "en cours…", "te.analysing": "nouvelle prise : analyse…",
+  "te.done.del": "Passage supprimé : prise {n}, retenue", "te.done.synth": "Passage remplacé par la synthèse : prise {n}, retenue", "te.done.mic": "Passage réenregistré : prise {n}, retenue",
+  "tk.edit": "Éditer", "tk.edit.t": "Supprimer ou remplacer un passage, couper la réplique (X)",
+  "ed.id": "ID", "ed.id.auto": "automatique", "ed.id.h": "le nom de la réplique (lettres, chiffres, - et _)",
+  "ed.split": "Couper au curseur", "ed.split.t": "Couper la réplique en deux à l'endroit du curseur ; la prise retenue est coupée au même endroit",
+  "ed.split.take": "Réplique coupée : la suite est {id}, avec sa moitié de la prise", "ed.split.done": "Réplique coupée : la suite est {id}",
+  "ed.renamed": "Réplique {a} renommée {b}",
   "tl.pauses": "Pauses", "tl.pauses.t": "Raccourcir les blancs à l'intérieur de la prise retenue (les mots restent calés)",
   "tl.pcap.none": "intactes", "tl.pinfo": "{n} pauses · −{s} s · cliquez une pause (bande orange) sur la forme d'onde pour la retirer",
   "tl.pcap.done": "Pauses limitées à {c} s : −{s} s", "tl.pcap.off": "Pauses intactes",
@@ -178,7 +193,8 @@ I18N.fr = {
     <dt><kbd>F</kbd></dt><dd>Écouter la prise retenue sur l'image.</dd>
     <dt><kbd>T</kbd></dt><dd>Écouter l'enregistrement brut de la prise retenue, sans traitement.</dd>
     <dt><kbd>S</kbd></dt><dd>Générer une prise de synthèse avec la voix choisie.</dd>
-    <dt><kbd>E</kbd></dt><dd>Modifier le texte de la réplique.</dd>
+    <dt><kbd>E</kbd></dt><dd>Modifier le texte de la réplique (et son ID, ou la couper au curseur).</dd>
+    <dt><kbd>X</kbd></dt><dd>Éditer la prise retenue : supprimer ou remplacer un passage, couper la réplique.</dd>
     <dt><kbd>I</kbd></dt><dd>Placer le début de la réplique à l'instant affiché par la vidéo.</dd>
     <dt><kbd>G</kbd></dt><dd>Écouter la source de la bande rythmo.</dd>
     <dt><kbd>1</kbd>…<kbd>9</kbd></dt><dd>Retenir la prise n.</dd>
@@ -190,13 +206,28 @@ I18N.fr = {
     <p><b>Durée.</b> La prise retenue peut être raccourcie ou allongée dans la piste (−/+ par pas de 2 %), ou calée d'un clic sur la durée du plan ou de la synthèse, sans changer la hauteur de la voix (WSOLA, l'algorithme de la version anglaise ; jamais Rubber Band, métallique). Au-delà de ±20 %, écoutez : la voix peut se dégrader.</p>
     <p><b>Pauses.</b> Les blancs à l'intérieur d'une prise sont repérés (bandes orange sur la forme d'onde). On peut les limiter toutes (≤ 0,5 / 0,3 / 0,15 s) ou en retirer une en cliquant dessus ; la partie retirée apparaît en rouge, les mots restent calés. Pauses et vitesse se combinent.</p>
     <p><b>Vidéo.</b> Projet ▸ « Choisir une vidéo ». Chaque réplique se place sur l'image : amenez la vidéo au bon endroit et « Placer ici » (I) ; « Placer la suite » enchaîne les répliques suivantes selon leur durée estimée. Un script importé en .srt arrive déjà placé.</p>
-    <p><b>Texte.</b> ✎ Modifier (E), + Réplique, 🗑 sur la réplique courante ; Projet ▸ « Modifier le script » pour tout le texte d'un coup.</p>
+    <p><b>Texte.</b> ✎ Modifier (E) : le texte, l'ID, « Couper au curseur » ; + Réplique, 🗑 sur la réplique courante ; Projet ▸ « Modifier le script » pour tout le texte d'un coup.</p>
+    <p><b>Éditer une prise</b> (✂ sur la prise, X). Sélectionnez des mots, puis supprimez le passage, remplacez-le par la synthèse (texte modifiable) ou par un nouvel enregistrement, ou coupez la réplique avant lui. Les coupes se font dans les silences entre les mots ; chaque modification donne une nouvelle prise, l'ancienne reste.</p>
     <p>Vous pouvez vous écarter du script : sous chaque prise s'affiche ce que vous avez dit, et c'est ce texte, mot à mot avec ses temps, qui part avec la prise.</p>
     <p>La prise retenue est exportée aussitôt dans la piste voix du projet (Projet ▸ Piste voix) : coupée, débruitée, à −20 LUFS, avec durations.json et words.json pour le montage.</p>
     <p>Débruitage : « Profil de bruit » enregistre 10 s de silence ; ce bruit est soustrait de la piste exportée, recalé sur le silence avant la première syllabe. À refaire si le bruit de la pièce change.</p>`,
 };
 I18N.en = {
   "tab.studio": "Studio", "tab.voices": "Voices", "tab.synth": "Synthesis",
+  "te.title": "Edit the take", "te.all": "Select all", "te.none": "No analysed take to edit",
+  "te.del": "🗑 Delete the passage", "te.del.h": "the selected words leave the take", "te.del.go": "Delete",
+  "te.synth": "✦ Replace with synthesis", "te.synth.go": "Generate and replace",
+  "te.mic": "🎙 Replace by recording", "te.mic.h": "say only the passage; Space or ■ to stop, Esc to cancel", "te.mic.go": "Record", "te.mic.stop": "Stop",
+  "te.split": "✂ Cut the line", "te.split.h": "before \"{w}\": the rest becomes a new line, with its part of the take", "te.split.go": "Cut here",
+  "te.hint": "Click a word (or the waveform), Shift+click to extend the selection. Every change makes a new take, kept; the previous one stays in the list.",
+  "te.play.sel": "Listen to the passage", "te.play.take": "Listen to the take", "te.pick": "Select a passage: click a word, Shift+click to reach another.",
+  "te.sel": "{n} word(s) · {s} s · at {a} s", "te.working": "working…", "te.analysing": "new take: analysing…",
+  "te.done.del": "Passage deleted: take {n}, kept", "te.done.synth": "Passage replaced by synthesis: take {n}, kept", "te.done.mic": "Passage re-recorded: take {n}, kept",
+  "tk.edit": "Edit", "tk.edit.t": "Delete or replace a passage, cut the line (X)",
+  "ed.id": "ID", "ed.id.auto": "automatic", "ed.id.h": "the line's name (letters, digits, - and _)",
+  "ed.split": "Cut at the cursor", "ed.split.t": "Cut the line in two at the cursor; the kept take is cut at the same place",
+  "ed.split.take": "Line cut: the rest is {id}, with its half of the take", "ed.split.done": "Line cut: the rest is {id}",
+  "ed.renamed": "Line {a} renamed {b}",
   "tl.pauses": "Pauses", "tl.pauses.t": "Shorten the silences inside the kept take (words stay in sync)",
   "tl.pcap.none": "untouched", "tl.pinfo": "{n} pauses · −{s} s · click a pause (orange band) on the waveform to remove it",
   "tl.pcap.done": "Pauses capped at {c} s: −{s} s", "tl.pcap.off": "Pauses untouched",
@@ -362,7 +393,8 @@ I18N.en = {
     <dt><kbd>F</kbd></dt><dd>Listen to the kept take on the picture.</dd>
     <dt><kbd>T</kbd></dt><dd>Listen to the raw recording of the kept take, unprocessed.</dd>
     <dt><kbd>S</kbd></dt><dd>Generate a synthetic take in the chosen voice.</dd>
-    <dt><kbd>E</kbd></dt><dd>Edit the line's text.</dd>
+    <dt><kbd>E</kbd></dt><dd>Edit the line's text (and its ID, or cut it at the cursor).</dd>
+    <dt><kbd>X</kbd></dt><dd>Edit the kept take: delete or replace a passage, cut the line.</dd>
     <dt><kbd>I</kbd></dt><dd>Place the line's start at the video's current time.</dd>
     <dt><kbd>G</kbd></dt><dd>Listen to the source of the rythmo band.</dd>
     <dt><kbd>1</kbd>…<kbd>9</kbd></dt><dd>Keep take n.</dd>
@@ -374,7 +406,8 @@ I18N.en = {
     <p><b>Duration.</b> The kept take can be made shorter or longer in the track (−/+ in 2 % steps), or fitted in one click to the shot or the synthesis, pitch unchanged (WSOLA, the English version's algorithm; never Rubber Band, metallic). Beyond ±20 %, listen: the voice may degrade.</p>
     <p><b>Pauses.</b> Silences inside a take are detected (orange bands on the waveform). Cap them all (≤ 0.5 / 0.3 / 0.15 s) or remove one by clicking it; the removed part shows in red, words stay in sync. Pauses and speed add up.</p>
     <p><b>Video.</b> Project ▸ "Choose a video". Each line is placed on the picture: bring the video to the right spot and "Place here" (I); "Place the rest" chains the following lines by their estimated duration. A script imported as .srt arrives already placed.</p>
-    <p><b>Text.</b> ✎ Edit (E), + Line, 🗑 on the current line; Project ▸ "Edit the script" for the whole text at once.</p>
+    <p><b>Text.</b> ✎ Edit (E): the text, the ID, "Cut at the cursor"; + Line, 🗑 on the current line; Project ▸ "Edit the script" for the whole text at once.</p>
+    <p><b>Editing a take</b> (✂ on the take, X). Select words, then delete the passage, replace it with synthesis (editable text) or with a new recording, or cut the line before it. Cuts fall in the silences between words; every change gives a new take, the previous one stays.</p>
     <p>You can stray from the script: what you said shows under each take, and that text, word by word with its timings, goes with the take.</p>
     <p>The kept take is exported at once to the project's voice track (Project ▸ Voice track): trimmed, denoised, at −20 LUFS, with durations.json and words.json for the edit.</p>
     <p>Denoising: "Noise profile" records 10 s of silence; that noise is subtracted from the exported track, matched to the silence before the first syllable. Redo it if the room noise changes.</p>`,

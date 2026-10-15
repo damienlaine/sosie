@@ -28,7 +28,7 @@ import numpy as np
 
 from . import audio
 from .asr import align
-from .text import tokens, words_to_tokens
+from .text import norm, tokens, words_to_tokens
 from .util import home, log, read_json, stamp, write_json
 
 ID = re.compile(r"[\w-]+")
@@ -190,13 +190,21 @@ class Project:
             self.byid[lid]["text"] = text
             self.save_script()
 
-    def add_line(self, after, text):
+    def check_id(self, lid):
+        if not ID.fullmatch(lid or ""):
+            raise ValueError("an id is made of letters, digits, - and _")
+        if lid in self.byid or os.path.exists(os.path.join(self.path("takes"), lid)):
+            raise ValueError(f"the id {lid} is already used")
+
+    def add_line(self, after, text, lid=None):
         """A new line after the line `after` (in its chapter), or at the end."""
         text = " ".join(text.split())
         if not text:
             raise ValueError("empty line")
         with self.lock:
-            lid = self.new_id()
+            if lid:
+                self.check_id(lid)
+            lid = lid or self.new_id()
             i = next((k + 1 for k, ln in enumerate(self.lines) if ln["id"] == after), len(self.lines))
             ch = self.lines[i - 1]["ch"] if i else (self.chapters[0]["num"] if self.chapters else 0)
             if not self.chapters:
@@ -204,6 +212,183 @@ class Project:
             self.lines.insert(i, {"id": lid, "ch": ch, "text": text})
             self.save_script()
             return lid
+
+    def rename_line(self, old, new):
+        """A new id for a line: its takes, kept take, exported file, place in the video and pace follow."""
+        if new == old:
+            return
+        with self.lock:
+            self.check_id(new)
+            self.byid[old]["id"] = new
+            self.save_script()
+            tdir = self.path("takes")
+            if os.path.isdir(os.path.join(tdir, old)):
+                os.rename(os.path.join(tdir, old), os.path.join(tdir, new))
+            if old in self.tk:
+                self.tk[new] = self.tk.pop(old)
+            if old in self.sel:
+                self.sel[new] = self.sel.pop(old)
+                self.save_sel()
+            exp = self.path("export")
+            if os.path.exists(os.path.join(exp, old + ".wav")):
+                os.rename(os.path.join(exp, old + ".wav"), os.path.join(exp, new + ".wav"))
+            for f in ("durations.json", "words.json"):
+                d = read_json(os.path.join(exp, f), None)
+                if d and old in d:
+                    d[new] = d.pop(old)
+                    write_json(os.path.join(exp, f), d, indent=1 if f == "durations.json" else None)
+            if old in self.timing:
+                self.timing[new] = self.timing.pop(old)
+                write_json(self.path("timing"), self.timing)
+            if old in self.gw:
+                self.gw[new] = self.gw.pop(old)
+                write_json(self.path("guide_words"), self.gw)
+            todo = read_json(self.path("todo"), None)
+            if todo and old in todo:
+                write_json(self.path("todo"), [new if i == old else i for i in todo])
+            lines = self.settings.get("pace", {}).get("lines", {})
+            if old in lines:
+                lines[new] = lines.pop(old)
+                write_json(self.p("settings.json"), self.settings)
+        log(f"line {old} renamed {new}")
+
+    # ------------------------------------------------------------ editing takes: a passage removed or replaced, a line split
+    def take_signal(self, lid, n):
+        m = self.tk[lid][n]
+        x, sr = audio.read_wav(self.take_path(lid, n))
+        return x[:, m.get("ch", 0)].astype(np.float64), sr, m
+
+    def add_take(self, lid, y, sr, heard, trim, fields):
+        """A take built here (an edit of another take): words and speech bounds are known, no new analysis.
+        It becomes the kept take of the line."""
+        y = np.asarray(y, np.float64)
+        with self.lock:
+            os.makedirs(os.path.join(self.path("takes"), lid), exist_ok=True)
+            n = self.next_n(lid)
+            audio.write_wav24(self.take_path(lid, n), y[:, None], sr)
+            dur = len(y) / sr
+            a, b = max(0.0, trim[0]), min(dur, trim[1])
+            peak = float(np.abs(y).max()) if len(y) else 0.0
+            heard = [{"t": w["t"], "s": round(max(0.0, w["s"]), 3), "e": round(min(dur, w["e"]), 3)} for w in heard if norm(w["t"])]
+            m = {"n": n, "file": f"t{n:02d}.wav", "created": stamp(), "text": self.byid[lid]["text"], "status": "ok",
+                 "ch": 0, "channels": 1, "sr": sr, "dur": round(dur, 3), "trim": [round(a, 3), round(b, 3)],
+                 "pauses": audio.find_pauses(y, sr, a, b), "peaks": audio.peaks(y), "peak_db": round(20 * np.log10(peak + 1e-9), 1),
+                 "clips": int((np.abs(y) >= audio.CLIP).sum()), "heard": heard, "asr": " ".join(w["t"] for w in heard), **fields}
+            self.tk.setdefault(lid, {})[n] = m
+            self.save_meta(lid, n)
+            self.sel[lid] = n
+            self.save_sel()
+            self.export(lid)
+        log(f"{lid}: take {n} made by an edit ({m.get('rec', {}).get('edit')}, {dur:.1f} s)")
+        return m
+
+    def edit_take(self, lid, n, s, e, insert=None, insert_kind=None, label="delete", extra_info=None, insert_words=None):
+        """New take = take n with the passage [s, e] (take time, s) removed or replaced by insert (float, same rate).
+        Words: those of the take before and after the passage, and those of the insert (given, or heard by Whisper)."""
+        y, sr, m = self.take_signal(lid, n)
+        out, s2, e2, d_ins = audio.splice(y, sr, float(s), float(e), insert)
+        if insert is not None and len(insert) and insert_words is None and self.asr:
+            insert_words = [{"t": w, "s": a, "e": b} for w, a, b in self.asr.transcribe(audio.to16k(np.asarray(insert, np.float64), sr), self.lang)]
+        shift = d_ins - (e2 - s2)
+        mid = lambda w: (w["s"] + w["e"]) / 2       # noqa: E731  a word belongs to the side of its middle
+        heard = ([{**w, "e": min(w["e"], s2)} for w in m["heard"] if mid(w) <= s2]
+                 + [{**w, "s": w["s"] + s2, "e": w["e"] + s2} for w in (insert_words or [])]
+                 + [{**w, "s": max(w["s"], e2) + shift, "e": w["e"] + shift} for w in m["heard"] if mid(w) >= e2])
+        pa, pb = m["trim"]
+        trim = [pa if pa < s2 - 0.01 else s2, pb + shift if pb > e2 + 0.01 else s2 + d_ins]
+        synth = m.get("kind") == "synth" and insert_kind in (None, "synth")
+        fields = {"rec": {"edit": label, "from": n, "s": round(s2, 3), "e": round(e2, 3), "insert": round(d_ins, 3), **(extra_info or {})},
+                  **({"kind": "synth"} if synth else {}), **{k: m[k] for k in ("voice", "voiceName") if synth and k in m}}
+        log(f"{lid}: take {n} edited ({label} {s2:.2f}–{e2:.2f} s)")
+        return self.add_take(lid, out, sr, heard, trim, fields)
+
+    @staticmethod
+    def word_cut(m, j):
+        """Where to cut a take between its heard words j-1 and j (take time): in the pause between them if there is one
+        (Whisper often stretches a word over the next or previous silence), else between the end of one and the start of
+        the other. j = 0: start of speech; j = number of words: end of speech."""
+        h, (a, b) = m["heard"], m["trim"]
+        if j <= 0:
+            return a
+        if j >= len(h):
+            return b
+        lo, hi = h[j - 1]["s"], h[j]["e"]
+        for ps, pe in m.get("pauses", []):
+            if ps >= lo - 0.05 and pe <= hi + 0.05:
+                return (ps + pe) / 2
+        e_prev, s_next = h[j - 1]["e"], h[j]["s"]
+        return (e_prev + s_next) / 2 if s_next > e_prev else s_next
+
+    def passage(self, lid, n, i0, i1):
+        """[start, end] (take time) of the heard words i0…i1 of a take, cut between words."""
+        m = self.tk[lid][n]
+        return self.word_cut(m, int(i0)), self.word_cut(m, int(i1) + 1)
+
+    def split_line(self, lid, pos=None, word=None, text=None):
+        """Cuts a line in two: at the character pos of its text (between two words), or before the heard word `word` of
+        its kept take. The kept take is cut at the same place (from the word timings, in the pause between the two words);
+        each half becomes the kept take of its line. Returns the new line's id."""
+        from .asr import align
+        with self.lock:
+            ln = self.byid[lid]
+            orig = text or ln["text"]
+            raw = orig.split()
+            text = " ".join(raw)
+            n = self.sel.get(lid)
+            m = self.tk.get(lid, {}).get(n)
+            m = m if m and m.get("status") == "ok" and m.get("heard") else None
+            tok_raw = [i for i, r in enumerate(raw) if norm(r)]          # raw words that are words (not punctuation)
+            words = align(tokens(text), [[w["t"], w["s"], w["e"]] for w in m["heard"]], m["dur"])[0] if m else None
+            j = None                                                       # heard word where the second half starts
+            if word is not None:
+                if not m:
+                    raise ValueError("no kept take to cut")
+                j = int(word)
+                tj = m["heard"][j]["s"]
+                ti = min(range(len(words)), key=lambda i: abs(words[i]["s"] - tj)) if words else 0
+                k = tok_raw[ti] if words else 0
+            else:                                        # the cursor in the text: before the word it is in, after the word it follows
+                pos = max(0, min(len(orig), int(pos)))
+                before = orig[:pos]
+                if not before.strip():
+                    k = 0
+                elif before[-1].isspace() or pos >= len(orig) or orig[pos].isspace():
+                    k = len(before.split())
+                else:
+                    k = len(before.split()) - 1
+                if m and words:
+                    ti = next((i for i, r in enumerate(tok_raw) if r >= k), None)
+                    if ti is not None:
+                        ts = words[ti]["s"]
+                        j = min(range(len(m["heard"])), key=lambda i: abs(m["heard"][i]["s"] - ts))
+            if k <= 0 or k >= len(raw):
+                raise ValueError("cut between two words of the line")
+            a_text, b_text = " ".join(raw[:k]), " ".join(raw[k:])
+            ln["text"] = a_text
+            new = self.new_id()
+            i = next(x for x, y in enumerate(self.lines) if y["id"] == lid)
+            self.lines.insert(i + 1, {"id": new, "ch": ln["ch"], "text": b_text})
+            self.save_script()
+            cut_t = self.word_cut(m, j) if m and j else None
+            tm = self.timing.get(lid)
+        if cut_t is not None:
+            y, sr, _ = self.take_signal(lid, n)
+            c = audio.quiet_point(y, sr, cut_t, 0.03)
+            mid = lambda w: (w["s"] + w["e"]) / 2   # noqa: E731
+            synth = m.get("kind") == "synth"
+            extra = {**({"kind": "synth"} if synth else {}), **{k: m[k] for k in ("voice", "voiceName") if synth and k in m}}
+            pa, pb = m["trim"]
+            self.add_take(lid, y[:int(c * sr)], sr, [{**w, "e": min(w["e"], c)} for w in m["heard"] if mid(w) <= c], [pa, min(pb, c)],
+                          {"rec": {"edit": "split", "from": n, "at": round(c, 3)}, **extra})
+            self.add_take(new, y[int(c * sr):], sr, [{**w, "s": max(w["s"], c) - c, "e": w["e"] - c} for w in m["heard"] if mid(w) > c],
+                          [max(0.0, pa - c), pb - c], {"rec": {"edit": "split", "from": f"{lid}/{n}", "at": round(c, 3)}, **extra})
+            if tm:                                       # the second half starts where the cut is, in the video
+                f = float(m.get("tempo", 1.0))
+                at = tm["vo"] + max(0.0, c - m["trim"][0]) / f
+                end = tm["start"] + tm["dur"]
+                self.set_timing({lid: {**tm, "dur": max(0.2, at - tm["start"])}, new: {"start": at, "vo": at, "dur": max(0.2, end - at)}})
+        log(f"line {lid} split: {new} starts with {b_text[:40]!r}" + (f", take cut at {cut_t:.2f} s" if cut_t is not None else ""))
+        return new
 
     def delete_line(self, lid):
         """The line leaves the script; its takes stay in takes/<id>/, its exported file goes to the trash."""
@@ -298,7 +483,7 @@ class Project:
         used += [int(m[1]) for f in os.listdir(trash) if (m := re.fullmatch(rf"{re.escape(lid)}-t(\d+)-.*\.wav", f))]
         return max(used, default=0) + 1
 
-    def new_take(self, lid, body, info):
+    def new_take(self, lid, body, info, extra=None):
         with self.lock:
             os.makedirs(os.path.join(self.path("takes"), lid), exist_ok=True)
             n = self.next_n(lid)
@@ -309,7 +494,7 @@ class Project:
             except Exception:
                 traceback.print_exc()
             self.tk.setdefault(lid, {})[n] = {"n": n, "file": f"t{n:02d}.wav", "created": stamp(),
-                                              "text": self.byid[lid]["text"], "status": "analyse", "rec": info}
+                                              "text": self.byid[lid]["text"], "status": "analyse", "rec": info, **(extra or {})}
             self.save_meta(lid, n)
             self.sel[lid] = n                          # the latest take is kept by default
             self.save_sel()
@@ -438,7 +623,7 @@ class Project:
                 audio.write_wav24(tmp[4], y[:, None], sr)
                 src, ch, a, b = tmp[4], 0, 0.0, len(y) / sr
             if synth:                                  # already trimmed and clean: tempo, then level
-                audio.ffmpeg("-i", src, "-af", f"pan=mono|c0=c{ch},{tempo}anull", "-c:a", "pcm_f32le", tmp[2])
+                audio.ffmpeg("-i", src, "-af", f"pan=mono|c0=c{ch},atrim={a}:{b},asetpts=PTS-STARTPTS,{tempo}anull", "-c:a", "pcm_f32le", tmp[2])
             else:
                 audio.ffmpeg("-i", src, "-af",
                              f"pan=mono|c0=c{ch},atrim={a}:{b},asetpts=PTS-STARTPTS,{tempo}highpass=f=70,"

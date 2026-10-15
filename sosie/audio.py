@@ -256,6 +256,52 @@ def find_pauses(y, sr, a, b, min_len=0.15):
     return out
 
 
+def quiet_point(y, sr, t, win=0.06):
+    """The quietest 10 ms around t (± win seconds): where to cut speech without clicking into a syllable."""
+    hop = int(0.01 * sr)
+    i0, i1 = max(0, int((t - win) * sr)), min(len(y) - hop, int((t + win) * sr))
+    if i1 <= i0:
+        return t
+    starts = np.arange(i0, i1, max(1, hop // 2))
+    e = [float(np.mean(y[k:k + hop] ** 2)) for k in starts]
+    return (starts[int(np.argmin(e))] + hop / 2) / sr
+
+
+def speech_rms(y, sr):
+    """RMS level of the voiced frames (the level of the speech, not of the silences)."""
+    t, v = voiced(y, sr)
+    fr = 3 * (sr // 100)
+    if not v.any():
+        return float(np.sqrt(np.mean(y ** 2)) + 1e-9)
+    idx = (t[v] * sr).astype(int)
+    return float(np.sqrt(np.mean(np.concatenate([y[i:i + fr] for i in idx]) ** 2)) + 1e-9)
+
+
+def splice(y, sr, s, e, insert=None, xf=0.015, win=0.03):
+    """y with [s, e] (s) replaced by insert (or removed), cut points moved to the quietest instants nearby,
+    each join crossfaded over xf seconds; the insert is brought to the speech level of y. Returns (signal, s, e, insert length)."""
+    s, e = quiet_point(y, sr, s, win), quiet_point(y, sr, e, win)    # a small window: a hiss ("s") is quieter than a vowel
+    a, b = int(s * sr), int(e * sr)
+    pieces = [y[:a]]
+    n_ins = 0
+    if insert is not None and len(insert):
+        g = speech_rms(y, sr) / speech_rms(insert, sr)
+        ins = insert * min(4.0, max(0.25, g))
+        pieces.append(ins)
+        n_ins = len(ins)
+    pieces.append(y[b:])
+    n = int(xf * sr)
+    out = pieces[0].astype(np.float64)
+    for p in pieces[1:]:
+        p = p.astype(np.float64)
+        k = min(n, len(out), len(p))
+        if k:
+            r = np.linspace(0, 1, k)
+            out[-k:] = out[-k:] * (1 - r) + p[:k] * r
+        out = np.concatenate([out, p[k:]])
+    return out, s, e, n_ins / sr
+
+
 def cut(y, sr, cuts, xf=0.01):
     """y without the regions cuts [[start, end], …] (s), each join crossfaded over xf seconds."""
     if not cuts:

@@ -265,6 +265,22 @@ details[open] > summary { margin-bottom: 8px; }
 #help dt { text-align: right; } #help dt kbd { font-size: 12px; color: var(--ink); }
 #help dd { color: #b9c3cc; }
 #scripted { min-height: 50vh; font-family: var(--mono); font-size: 13px; line-height: 1.5; }
+#te-wave { width: 100%; height: 110px; display: block; cursor: pointer; background: var(--bg); border-radius: 8px; }
+.tewords { display: flex; flex-wrap: wrap; gap: 4px 3px; font-size: 17px; line-height: 1.6; max-height: 26vh; overflow-y: auto; }
+.tewords span { padding: 0 4px; border-radius: 5px; cursor: pointer; color: #c9d2da; user-select: none; }
+.tewords span:hover { background: var(--panel2); }
+.tewords span.on { background: rgba(0,194,162,.25); color: var(--ink); }
+.tewords span.now { color: var(--teal); }
+.teacts { display: flex; flex-direction: column; gap: 6px; }
+.teacts.off { opacity: .45; pointer-events: none; }
+.tea { display: flex; gap: 10px; align-items: center; padding: 7px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; font-size: 13px; }
+.tea b { width: 230px; flex: none; }
+.tea input { flex: 1; font-size: 15px; }
+.tea button.rec { color: #ff9b9b; border-color: #6b2a2a; }
+body.recording .tea button.rec { background: var(--red); color: #fff; }
+#gate { z-index: 26; }
+.editor .idrow { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.editor .idrow input { width: 160px; font-family: var(--mono); font-size: 12px; }
 #toast { position: fixed; bottom: 200px; left: 50%; transform: translateX(-50%); z-index: 30; background: #1e2a33; border: 1px solid var(--line); padding: 8px 16px; border-radius: 9px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 80vw; }
 #toast.on { opacity: 1; }
 </style>
@@ -427,6 +443,21 @@ details[open] > summary { margin-bottom: 8px; }
     <div class="fsbox" id="fs-list"></div>
     <p class="muted" style="font-size:12px;margin-top:6px" data-i18n="pj.browse.hint"></p>
   </details>
+</div></div>
+
+<div class="ov" id="takedlg"><div class="dlg" style="width:min(1250px,97vw)">
+  <h2><span data-i18n="te.title"></span> <span id="te-title" class="muted" style="font-size:14px"></span><button class="x" data-close>✕</button></h2>
+  <canvas id="te-wave" width="2400" height="200"></canvas>
+  <div id="te-words" class="tewords"></div>
+  <div class="row" id="te-selrow"><span id="te-sel" class="muted"></span><span class="spacer"></span>
+    <button id="te-play"></button><button id="te-all" data-i18n="te.all"></button></div>
+  <div class="teacts" id="te-acts">
+    <div class="tea"><b data-i18n="te.del"></b><span class="muted" data-i18n="te.del.h"></span><span class="spacer"></span><button id="te-delete" class="danger" data-i18n="te.del.go"></button></div>
+    <div class="tea"><b data-i18n="te.synth"></b><input type="text" id="te-text" /><select id="te-voice"></select><button id="te-synth" class="primary" data-i18n="te.synth.go"></button></div>
+    <div class="tea"><b data-i18n="te.mic"></b><span class="muted" data-i18n="te.mic.h"></span><span class="spacer"></span><button id="te-rec" class="rec"></button></div>
+    <div class="tea"><b data-i18n="te.split"></b><span class="muted" id="te-split-h"></span><span class="spacer"></span><button id="te-split" data-i18n="te.split.go"></button></div>
+  </div>
+  <p class="muted" style="font-size:12px" id="te-status" data-i18n="te.hint"></p>
 </div></div>
 
 <div class="ov" id="pickdlg"><div class="dlg">

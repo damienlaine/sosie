@@ -15,7 +15,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import clips, scripts, tts, voices
+from . import audio, clips, scripts, tts, voices
 from . import project as projects
 from .asr import Transcriber
 from .audio import is_wav
@@ -66,8 +66,8 @@ class App:
     # ------------------------------------------------------------ jobs on the GPU, one at a time
     def submit(self, kind, fn, **info):
         jid = uuid.uuid4().hex[:10]
-        self.jobs[jid] = {"id": jid, "kind": kind, "status": "queued", "progress": None, "result": None, "error": None,
-                          "created": time.time(), "fn": fn, **info}
+        self.jobs[jid] = {**info, "id": jid, "kind": kind, "status": "queued", "progress": None, "result": None, "error": None,
+                          "created": time.time(), "fn": fn}
         self.jq.put(jid)
         return self.job_view(self.jobs[jid])
 
@@ -372,13 +372,60 @@ class Handler(BaseHTTPRequestHandler):
             A.open(pr.dir)
             return self.send_json(A.project.state())
         # editing the script, the video, the timing, the pace
-        if (m := re.fullmatch(r"/api/line/([\w-]+)/(edit|delete)", p)) and m[1] in pr.byid:
-            pr.edit_line(m[1], js()["text"]) if m[2] == "edit" else pr.delete_line(m[1])
+        if (m := re.fullmatch(r"/api/line/([\w-]+)/(edit|delete|rename|split)", p)) and m[1] in pr.byid:
+            d = js()
+            if m[2] == "edit":
+                pr.edit_line(m[1], d["text"])
+            elif m[2] == "delete":
+                pr.delete_line(m[1])
+            elif m[2] == "rename":
+                pr.rename_line(m[1], d["to"].strip())
+                return self.send_json({**pr.state(), "renamed": d["to"].strip()})
+            else:
+                new = pr.split_line(m[1], pos=d.get("pos"), word=d.get("word"), text=d.get("text"))
+                return self.send_json({**pr.state(), "added": new})
             return self.send_json(pr.state())
         if p == "/api/line/add":
             d = js()
-            lid = pr.add_line(d.get("after"), d.get("text", ""))
+            lid = pr.add_line(d.get("after"), d.get("text", ""), (d.get("id") or "").strip() or None)
             return self.send_json({**pr.state(), "added": lid})
+        # editing a take: a passage removed, replaced by the synthesis or by a new recording (a new take each time)
+        if (m := re.fullmatch(r"/api/takeedit/([\w-]+)/(\d+)", p)) and m[1] in pr.byid:
+            lid, n = m[1], int(m[2])
+            if n not in pr.tk.get(lid, {}):
+                raise LookupError("unknown take")
+            d = js()
+            if "i0" in d:                                # a passage given as heard words: cut between words
+                d["s"], d["e"] = pr.passage(lid, n, d["i0"], d["i1"])
+            if d["op"] == "delete":
+                tk = pr.edit_take(lid, n, d["s"], d["e"])
+                return self.send_json({"take": tk, "line": pr.line_state(pr.byid[lid])})
+            if d["op"] == "synth":
+                if not tts.available():
+                    raise RuntimeError("synthesis not installed: pip install 'sosie[voice]'")
+                text, vid = (d.get("text") or "").strip(), d["voice"]
+                if not text:
+                    raise ValueError("nothing to say")
+
+                def run(progress):
+                    res = A.engine.speak(text, vid, lang=pr.lang, tries=int(d.get("tries", 3)), lexicon=pr.lexicon(),
+                                         progress=lambda s_, n_, k, t_: progress(sentence=s_ + 1, sentences=n_, draw=k + 1, draws=t_))
+                    tk = pr.edit_take(lid, n, d["s"], d["e"], res["y"], "synth", "synth", {"text": text, "voice": vid},
+                                      insert_words=res["words"])
+                    return {"take": tk}
+                return self.send_json(A.submit("take-edit", run, voice=vid, project=pr.dir, line=lid))
+            raise ValueError("unknown edit")
+        if (m := re.fullmatch(r"/api/takeedit/([\w-]+)/(\d+)/mic", p)) and m[1] in pr.byid:
+            q = parse_qs(urlparse(self.path).query)
+            if not is_wav(body):
+                raise ValueError("not a WAV file")
+            x, sr = audio_read(body)
+            ch = audio.pick_channel(x)
+            y = x[:, ch].astype("float64")
+            a, b = audio.speech_bounds(y, sr, [], head=0.04, tail=0.10)
+            s_, e_ = pr.passage(m[1], int(m[2]), q["i0"][0], q["i1"][0]) if "i0" in q else (float(q["s"][0]), float(q["e"][0]))
+            tk = pr.edit_take(m[1], int(m[2]), s_, e_, y[int(a * sr):int(b * sr)], "mic", "mic")
+            return self.send_json({"take": tk, "line": pr.line_state(pr.byid[m[1]])})
         if p == "/api/film":
             pr.set_film(js().get("path"))
             return self.send_json(pr.state())
@@ -415,6 +462,13 @@ class Handler(BaseHTTPRequestHandler):
             write_json(pr.path("todo"), ids)
             return self.send_json({"todo": ids})
         return self.fail("not found", 404)
+
+
+def audio_read(body):
+    with tempfile.NamedTemporaryFile(suffix=".wav") as f:
+        f.write(body)
+        f.flush()
+        return audio.read_wav(f.name)
 
 
 def browse(d):
