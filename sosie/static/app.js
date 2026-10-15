@@ -891,9 +891,13 @@ function renderTools() {
   ["#t-shorter", "#t-longer", "#t-reset"].forEach((q) => ($(q).disabled = !ok));
   $("#t-reset").disabled = !ok || tempoOf(tk) === 1;
   if (ok) {
-    const d0 = speechDur(tk), f = tempoOf(tk);
-    $("#t-dur").innerHTML = f === 1 ? `${d0.toFixed(1)} s` : `${d0.toFixed(1)} → <b>${(d0 / f).toFixed(1)} s</b>`;
+    const d0 = speechDur(tk), d1 = effDur(tk);
+    $("#t-dur").innerHTML = Math.abs(d1 - d0) < 0.05 ? `${d0.toFixed(1)} s` : `${d0.toFixed(1)} → <b>${d1.toFixed(1)} s</b>`;
   } else $("#t-dur").textContent = t("tl.nokept");
+  $("#t-pcap").disabled = !ok || !tk.pauses;
+  $("#t-pcap").value = ok && tk.pause_cap ? String(tk.pause_cap) : "";
+  $("#t-pinfo").innerHTML = !ok ? "" : !tk.pauses ? `<span class="spin"></span>`
+    : t("tl.pinfo", { n: tk.pauses.length, s: cutTotal(tk).toFixed(2), d: (tk.pause_drop || []).length });
   const fits = [];
   if (sh.slot) fits.push([t("tl.fitslot", { s: sh.slot.toFixed(1) }), sh.slot]);
   const syn = lastSynth(sh);
@@ -905,7 +909,7 @@ function renderTools() {
     if (!fits[i]) return;
     b.textContent = fits[i][0];
     b.disabled = !ok;
-    b.onclick = () => setTempo(speechDur(tk) / fits[i][1]);
+    b.onclick = () => setTempo((speechDur(tk) - cutTotal(tk)) / fits[i][1]);
   });
 }
 
@@ -916,7 +920,12 @@ async function setTempo(f) {
   f = clamp(f, 0.7, 1.4);
   if (Math.abs(f - 1) < 0.004) f = 1;
   replaceShot(await post(`/api/tempo/${encodeURIComponent(sh.id)}/${tk.n}`, { tempo: f }));
-  toast(f === 1 ? t("tl.tempo.reset") : t(Math.abs(f - 1) > 0.2 ? "tl.tempo.far" : "tl.tempo.set", { s: (speechDur(tk) / f).toFixed(1), f: f.toFixed(2) }));
+  toast(f === 1 ? t("tl.tempo.reset") : t(Math.abs(f - 1) > 0.2 ? "tl.tempo.far" : "tl.tempo.set", { s: ((speechDur(tk) - cutTotal(tk)) / f).toFixed(1), f: f.toFixed(2) }));
+}
+
+async function setPauses(tk, body) {
+  const sh = cur();
+  replaceShot(await post(`/api/pauses/${encodeURIComponent(sh.id)}/${tk.n}`, body));
 }
 
 // where lines sit in the video: "Place here" puts the line's start at the picture's current time (the previous line now ends
@@ -1017,17 +1026,33 @@ function guideWords(sh) {
 const LETTER = /[\p{L}\p{N}]/u;
 const tempoOf = (tk) => tk?.tempo || 1;
 const speechDur = (tk) => tk.trim[1] - tk.trim[0];
+// shortened pauses (same rule as the server): a pause longer than the cap is cut down to it, a removed one to 0.08 s
+const PAUSE_KEEP = 0.08;
+function cutsOf(tk) {
+  const drop = new Set((tk.pause_drop || []).map((x) => x.toFixed(2)));
+  const out = [];
+  for (const [s, e] of tk.pauses || []) {
+    const keep = drop.has(s.toFixed(2)) ? PAUSE_KEEP : tk.pause_cap ? Math.max(PAUSE_KEEP, tk.pause_cap) : null;
+    if (keep != null && e - s > keep) out.push([s + keep / 2, e - keep / 2]);
+  }
+  return out;
+}
+const removedBefore = (cuts, x) => cuts.reduce((acc, [cs, ce]) => acc + Math.min(Math.max(x - cs, 0), ce - cs), 0);
+const cutTotal = (tk) => cutsOf(tk).reduce((acc, [cs, ce]) => acc + ce - cs, 0);
+const effDur = (tk) => (speechDur(tk) - cutTotal(tk)) / tempoOf(tk);   // as it sounds in the track
 const lastSynth = (sh) => sh.takes.filter((x) => !x.tmp && x.kind === "synth" && x.status === "ok").at(-1);
 const srcKey = () => "rsrc:" + S.data.project.dir;
 function takeTrack(sh, tk) {
   // the kept take is heard as exported (trimmed, at its tempo); another take raw, from its speech start
   const exp = tk.n === sh.sel && sh.export;
   const a = tk.trim[0], f = exp ? tempoOf(tk) : 1;
+  const cuts = exp ? cutsOf(tk).map(([cs, ce]) => [cs - a, ce - a]) : [];
+  const at = (x) => { const r = Math.max(0, x - a); return (r - removedBefore(cuts, r)) / f; };
   return {
-    words: (tk.heard || []).filter((w) => LETTER.test(w.t)).map((w) => ({ t: w.t, s: Math.max(0, w.s - a) / f, e: Math.max(0, w.e - a) / f })),
+    words: (tk.heard || []).filter((w) => LETTER.test(w.t)).map((w) => ({ t: w.t, s: at(w.s), e: at(w.e) })),
     audio: exp ? { url: `/export/${encodeURIComponent(sh.id)}.wav?v=${encodeURIComponent(sh.export)}`, a: 0 }
       : { url: `/takes/${encodeURIComponent(sh.id)}/${tk.file}?v=${encodeURIComponent(tk.created || "")}`, a },
-    dur: speechDur(tk) / f,
+    dur: exp ? effDur(tk) : speechDur(tk),
   };
 }
 function sources(sh) {
@@ -1057,7 +1082,7 @@ function measuredPace() {
   for (const sh of S.lines) {
     const tk = selTake(sh);
     if (!tk || tk.status !== "ok" || tk.kind === "synth" || !tk.heard) continue;
-    const k = tk.heard.filter((x) => LETTER.test(x.t)).length, dd = speechDur(tk) / tempoOf(tk) - 0.4;
+    const k = tk.heard.filter((x) => LETTER.test(x.t)).length, dd = effDur(tk) - 0.4;
     if (k && dd > 0.5) {
       w += k;
       d += dd;
@@ -1408,7 +1433,7 @@ function renderInfo() {
   if (sh.film) parts.push(t("st.infilm", { t: fmt(sh.film.vo) }));
   if (sh.slot) parts.push(t("st.slot", { s: sh.slot.toFixed(1) }));
   const tk = selTake(sh);
-  if (tk && tk.trim) parts.push(`<b>${t(tk.kind === "synth" ? "st.keptsynth" : "st.keptmic", { n: tk.n, s: (speechDur(tk) / tempoOf(tk)).toFixed(1) })}</b>`);
+  if (tk && tk.trim) parts.push(`<b>${t(tk.kind === "synth" ? "st.keptsynth" : "st.keptmic", { n: tk.n, s: effDur(tk).toFixed(1) })}</b>`);
   else parts.push(`<span class="warn">${t(sh.gdur ? "st.nokept.guide" : "st.nokept")}</span>`);
   if (sh.gdur && sh.gtext && sh.gtext !== sh.text && bandSource(sh).key === "guide") parts.push(`<span class="warn">${t("st.guideold")}</span>`);
   if (sh.note) parts.push(`<span class="warn">${esc(sh.note)}</span>`);
@@ -1422,7 +1447,7 @@ function progress() {
     if (tk && tk.status === "ok") {
       if (tk.kind === "synth") k++;
       else n++;
-      dur += speechDur(tk) / tempoOf(tk);
+      dur += effDur(tk);
     }
   }
   $("#prog").innerHTML = t("st.prog", { n, of: S.lines.length }) + (k ? " · " + t("st.prog.synth", { k }) : "") + (n + k ? ` · ${fmt(dur).replace(/\.\d$/, "")}` : "");
@@ -1455,15 +1480,32 @@ function takeCard(sh, tk) {
   const cv = el("canvas");
   cv.width = 520;
   cv.height = 80;
-  cv.onclick = () => playTake(tk.n);
+  const pauseAt = (ev) => {
+    if (!tk.pauses || !tk.dur) return null;
+    const r = cv.getBoundingClientRect(), x = ((ev.clientX - r.left) / r.width) * tk.dur, tol = (4 / r.width) * tk.dur;
+    return tk.pauses.find(([s, e]) => x >= s - tol && x <= e + tol) || null;
+  };
+  cv.onclick = async (ev) => {
+    const p = pauseAt(ev);
+    if (!p) return playTake(tk.n);
+    const was = (tk.pause_drop || []).some((x) => x.toFixed(2) === p[0].toFixed(2));
+    await setPauses(tk, { toggle: p[0] });
+    toast(t(was ? "tl.pause.back" : "tl.pause.cut", { s: (p[1] - p[0]).toFixed(2) }));
+  };
+  cv.onmousemove = (ev) => {
+    const p = pauseAt(ev);
+    cv.style.cursor = p ? "pointer" : "default";
+    cv.title = p ? t("tl.pause.t", { s: (p[1] - p[0]).toFixed(2) }) : t("tk.wave.t");
+  };
   c.append(cv);
   drawWave(cv, tk);
   const info = el("div", "ti");
   if (tk.status === "analyse") info.innerHTML = `<span class="spin"></span> ${t("tk.analysing")}`;
   else if (tk.status === "erreur") info.innerHTML = `<span class="chip bad">${t("tk.error")}</span> ${esc(tk.error || "")}`;
   else {
-    const chips = [`<span>${(speechDur(tk) / tempoOf(tk)).toFixed(1)} s</span>`];
+    const chips = [`<span>${effDur(tk).toFixed(1)} s</span>`];
     if (tempoOf(tk) !== 1) chips.push(`<span class="chip mid" title="${esc(t("tk.tempo.t"))}">×${tempoOf(tk).toFixed(2)}</span>`);
+    if (cutTotal(tk) > 0.01) chips.push(`<span class="chip mid" title="${esc(t("tk.cut.t"))}">−${cutTotal(tk).toFixed(2)} s</span>`);
     if (tk.kind === "synth") chips.push(tk.worst ? `<span class="chip mid">${t("tk.relisten")}</span>` : `<span class="chip good">${t("tk.checked")}</span>`);
     else if (tk.clips) chips.push(`<span class="chip bad">${t("tk.clipping")}</span>`);
     else if (tk.peak_db < -24) chips.push(`<span class="chip mid">${t("tk.low", { db: tk.peak_db })}</span>`);
@@ -1507,10 +1549,21 @@ function drawWave(cv, tk) {
   }
   const [a, b] = tk.trim;
   const n = tk.peaks.length;
+  const X = (sec) => (sec / tk.dur) * W;
+  for (const [s, e] of tk.pauses || []) {              // pauses: a light band; the part removed in red
+    g.fillStyle = "rgba(245,165,36,.13)";
+    g.fillRect(X(s), 0, Math.max(3, X(e) - X(s)), H);
+  }
+  for (const [cs, ce] of cutsOf(tk)) {
+    g.fillStyle = "rgba(239,68,68,.35)";
+    g.fillRect(X(cs), 0, Math.max(2, X(ce) - X(cs)), H);
+  }
+  const cuts = cutsOf(tk);
   for (let x = 0; x < W; x++) {
     const p = tk.peaks[Math.floor((x / W) * n)];
     const tm = (x / W) * tk.dur;
-    g.fillStyle = p >= 0.989 ? "#ef4444" : tm >= a && tm <= b ? "rgba(0,194,162,.85)" : "#34404b";
+    const gone = cuts.some(([cs, ce]) => tm >= cs && tm <= ce);
+    g.fillStyle = p >= 0.989 ? "#ef4444" : gone ? "#5a3a3a" : tm >= a && tm <= b ? "rgba(0,194,162,.85)" : "#34404b";
     const h = Math.max(1, Math.sqrt(p) * (H - 4));
     g.fillRect(x, (H - h) / 2, 1, h);
   }
@@ -1565,6 +1618,7 @@ function go(i, instant = false) {
     film.currentTime = sh.film.vo + 0.4;
   }
   if (!sh.guide && sh.gdur) poll(sh.id, true);
+  if (sh.takes.some((x) => !x.tmp && x.status === "ok" && !x.pauses)) api(`/api/line/${encodeURIComponent(sh.id)}?pauses=1`).then(replaceShot).catch(() => {});
 }
 
 function centerShot(instant) {
@@ -1631,6 +1685,14 @@ $("#t-pall").onclick = async () => {
   toast(t("tl.pace.alldone", { w: Math.round(w) }));
 };
 $("#t-place").onclick = placeHere;
+$("#t-pcap").onchange = async (e) => {
+  e.target.blur();
+  const tk = selTake(cur());
+  if (!tk) return;
+  await setPauses(tk, { cap: e.target.value ? +e.target.value : null });
+  const k = selTake(cur());
+  toast(e.target.value ? t("tl.pcap.done", { c: e.target.value, s: cutTotal(k).toFixed(2) }) : t("tl.pcap.off"));
+};
 $("#t-follow").onclick = placeFollowing;
 film.addEventListener("focus", () => film.blur()); // the native controls must not take Space (record) or the arrows
 $("#b-prev").onclick = () => go(S.cur - 1);

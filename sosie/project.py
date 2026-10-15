@@ -33,7 +33,24 @@ from .util import home, log, read_json, stamp, write_json
 
 ID = re.compile(r"[\w-]+")
 TAKE_SRC = ("voix", "take", "synth")   # export entries made from a take (not from the imported synthesis)
-NR_LEVELS = (0, 8, 14, 20)      # dB: maximum background-noise reduction (none, light, normal, strong)
+NR_LEVELS = (0, 8, 14, 20)
+PAUSE_KEEP = 0.08    # s: what is left of a pause that is removed (no pause at all sounds glued)
+
+
+def pause_cuts(m):
+    """Regions to remove from a take (take time, s): each pause longer than the cap is shortened to it, each dropped pause
+    to PAUSE_KEEP; the middle of the pause goes, its edges stay."""
+    cap, drop = m.get("pause_cap"), {round(s, 2) for s in m.get("pause_drop", [])}
+    out = []
+    for s, e in m.get("pauses", []):
+        keep = PAUSE_KEEP if round(s, 2) in drop else max(PAUSE_KEEP, cap) if cap else None
+        if keep is not None and e - s > keep:
+            out.append([s + keep / 2, e - keep / 2])
+    return out
+
+
+def removed_before(cuts, t):
+    return sum(min(max(t - cs, 0.0), ce - cs) for cs, ce in cuts)      # dB: maximum background-noise reduction (none, light, normal, strong)
 DEFAULT_PATHS = {"takes": "takes", "trash": "trash", "noise": "noise.wav", "todo": "todo.json", "guide": "guide",
                  "export": "export", "timing": "timing.json", "guide_words": "guide-words.json"}
 
@@ -313,8 +330,9 @@ class Project:
             asr = self.asr.transcribe(audio.to16k(y, sr), self.lang)
             asr += self.asr.tail_words(y, sr, asr, self.lang)
             peak = float(np.abs(y).max()) if len(y) else 0.0
+            trim = audio.speech_bounds(y, sr, asr)
             upd = dict(status="ok", ch=ch, channels=int(x.shape[1]), sr=sr, dur=round(len(y) / sr, 3),
-                       trim=audio.speech_bounds(y, sr, asr), peaks=audio.peaks(y),
+                       trim=trim, pauses=audio.find_pauses(y, sr, *trim), peaks=audio.peaks(y),
                        peak_db=round(20 * np.log10(peak + 1e-9), 1), clips=int((np.abs(y) >= audio.CLIP).sum()),
                        heard=[{"t": w, "s": a, "e": b} for w, a, b in asr], asr=" ".join(w[0] for w in asr))
         except Exception as e:
@@ -401,8 +419,9 @@ class Project:
             a, b = m["trim"]
             f = float(m.get("tempo", 1.0))
             tempo = f"atempo={f}," if abs(f - 1) > 1e-3 else ""
-            d = (b - a) / f
-            tmp = [os.path.join(exp, f".export-{k}.wav") for k in range(4)]
+            cuts = pause_cuts(m)
+            d = (b - a - sum(ce - cs for cs, ce in cuts)) / f
+            tmp = [os.path.join(exp, f".export-{k}.wav") for k in range(5)]
             src, ch, nr = self.take_path(lid, n), m["ch"], None
             target = float(self.conf.get("export", {}).get("lufs", -20.0))
             synth = m.get("kind") == "synth"
@@ -413,6 +432,11 @@ class Project:
                 if nr is not None:
                     audio.write_wav24(tmp[0], y[:, None], sr)
                     src, ch = tmp[0], 0
+            if cuts:                                   # shortened pauses: the speech span without them, then as usual
+                x, sr = audio.read_wav(src)
+                y = audio.cut(x[int(a * sr):int(b * sr), ch].astype(np.float64), sr, [[cs - a, ce - a] for cs, ce in cuts])
+                audio.write_wav24(tmp[4], y[:, None], sr)
+                src, ch, a, b = tmp[4], 0, 0.0, len(y) / sr
             if synth:                                  # already trimmed and clean: tempo, then level
                 audio.ffmpeg("-i", src, "-af", f"pan=mono|c0=c{ch},{tempo}anull", "-c:a", "pcm_f32le", tmp[2])
             else:
@@ -427,19 +451,22 @@ class Project:
             g2 = min(target - i2 if i2 > -70 else 0.0, -1.5 - p2)
             audio.ffmpeg("-i", tmp[2], "-af", f"volume={g2:.2f}dB", "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", tmp[3])
             os.replace(tmp[3], out)
-            for t in tmp[:3]:
+            for t in tmp[:3] + tmp[4:]:
                 if os.path.exists(t):
                     os.remove(t)
             dur = audio.wav_duration(out)
             meta[lid] = {"text": self.byid[lid]["text"], "dur": round(dur, 2),
                          "src": "synth" if synth else self.conf.get("export", {}).get("src", "take"),
                          "take": n, "denoise": depth if nr is not None else 0, "at": time.strftime("%H%M%S"),
-                         **({"voice": m.get("voice")} if synth else {}), **({"tempo": f} if tempo else {})}
-            words[lid] = [{"t": w["t"], "s": round(max(0.0, w["s"] - a) / f, 3), "e": round(max(0.0, w["e"] - a) / f, 3)}
-                          for w in m["heard"]]
+                         **({"voice": m.get("voice")} if synth else {}), **({"tempo": f} if tempo else {}),
+                         **({"cut": round(sum(ce - cs for cs, ce in cuts), 2)} if cuts else {})}
+            a0 = m["trim"][0]
+            at = lambda t: max(0.0, t - a0 - removed_before([[cs - a0, ce - a0] for cs, ce in cuts], max(0.0, t - a0))) / f  # noqa: E731
+            words[lid] = [{"t": w["t"], "s": round(at(w["s"]), 3), "e": round(at(w["e"]), 3)} for w in m["heard"]]
             write_json(dpath, meta)
             write_json(wpath, words)
             log(f"{lid}: {'synthetic ' if synth else ''}take {n} exported ({dur:.2f} s" + (f", tempo ×{f}" if tempo else "")
+                + (f", pauses −{sum(ce - cs for cs, ce in cuts):.2f} s" if cuts else "")
                 + (f", denoised -{depth} dB, profile {nr:+.1f} dB)" if nr is not None else ")"))
 
     def set_tempo(self, lid, n, f):
@@ -451,6 +478,43 @@ class Project:
             m["tempo"] = round(min(1.4, max(0.7, float(f))), 3)
             if abs(m["tempo"] - 1) < 1e-3:
                 m.pop("tempo")
+            self.save_meta(lid, n)
+            if self.sel.get(lid) == n:
+                self.export(lid)
+            return m
+
+    def ensure_pauses(self, lid):
+        """Pauses of the takes analysed before pause detection existed."""
+        changed = False
+        for n, m in list(self.tk.get(lid, {}).items()):
+            if m.get("status") == "ok" and "pauses" not in m:
+                x, sr = audio.read_wav(self.take_path(lid, n))
+                with self.lock:
+                    m["pauses"] = audio.find_pauses(x[:, m.get("ch", 0)], sr, *m["trim"])
+                    self.save_meta(lid, n)
+                changed = True
+        return changed
+
+    def set_pauses(self, lid, n, cap=False, toggle=None):
+        """cap: longest pause kept, in seconds (None: pauses untouched; False: unchanged). toggle: start of a pause to remove
+        (or to restore if it was removed)."""
+        with self.lock:
+            m = self.tk.get(lid, {}).get(n)
+            if not m:
+                raise LookupError("unknown take")
+            if cap is not False:
+                if cap:
+                    m["pause_cap"] = round(max(PAUSE_KEEP, float(cap)), 3)
+                else:
+                    m.pop("pause_cap", None)
+            if toggle is not None:
+                drop = [round(s, 2) for s in m.get("pause_drop", [])]
+                k = round(float(toggle), 2)
+                drop = [s for s in drop if s != k] if k in drop else drop + [k]
+                if drop:
+                    m["pause_drop"] = sorted(drop)
+                else:
+                    m.pop("pause_drop", None)
             self.save_meta(lid, n)
             if self.sel.get(lid) == n:
                 self.export(lid)
@@ -472,6 +536,7 @@ class Project:
                  "voice": vid, "voiceName": voice_name, "settings": {k: res["settings"].get(k) for k in
                  ("exaggeration", "cfg_weight", "temperature", "decoder_seconds", "tempo")},
                  "ch": 0, "channels": 1, "sr": sr, "dur": dur, "trim": [0.0, dur], "peaks": audio.peaks(y),
+                 "pauses": audio.find_pauses(y, sr, 0.0, dur),
                  "peak_db": round(20 * np.log10(peak + 1e-9), 1), "clips": 0,
                  "heard": [{"t": w["t"], "s": w["s"], "e": w["e"]} for w in res["words"]], "asr": text,
                  "worst": max((r["bad"] for r in res["report"]), default=0), "report": res["report"]}

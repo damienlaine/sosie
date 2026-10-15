@@ -225,6 +225,8 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/script":
             return self.send_json({"text": lines_to_text(pr)})
         if (m := re.fullmatch(r"/api/line/([\w-]+)", p)) and m[1] in pr.byid:
+            if "pauses" in q:
+                pr.ensure_pauses(m[1])
             with pr.lock:
                 st = pr.line_state(pr.byid[m[1]])
             if st["guide"] is None and "guide" in q:
@@ -349,6 +351,11 @@ class Handler(BaseHTTPRequestHandler):
             if not ids:
                 raise ValueError("no line to synthesise")
             return self.send_json(A.synth_takes(d["voice"], ids, d.get("settings"), int(d.get("tries", 3))))
+        if (m := re.fullmatch(r"/api/pauses/([\w-]+)/(\d+)", p)) and m[1] in pr.byid:
+            d = js()
+            pr.set_pauses(m[1], int(m[2]), cap=d["cap"] if "cap" in d else False, toggle=d.get("toggle"))
+            with pr.lock:
+                return self.send_json(pr.line_state(pr.byid[m[1]]))
         if (m := re.fullmatch(r"/api/tempo/([\w-]+)/(\d+)", p)) and m[1] in pr.byid:
             pr.set_tempo(m[1], int(m[2]), float(js()["tempo"]))
             with pr.lock:

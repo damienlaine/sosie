@@ -142,6 +142,8 @@ body.recording #bar { background: var(--red); box-shadow: 0 0 12px var(--red); }
 .mono { font-family: var(--mono); font-size: 12px; min-width: 128px; text-align: center; }
 .mono b { color: var(--teal); }
 .mono.short { min-width: 92px; }
+.algo { font-size: 10px; color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+#t-pinfo { font-size: 12px; }
 .pace { display: none; gap: 6px; align-items: center; }
 .pace.on { display: flex; }
 .shot .acts { margin-left: auto; display: none; gap: 4px; }
@@ -336,7 +338,10 @@ details[open] > summary { margin-bottom: 8px; }
         <button id="b-guide"><span data-i18n="tl.listen"></span><kbd>G</kbd></button></div>
       <div class="trow" data-i18n-title="tl.dur.t"><span class="tl" data-i18n="tl.dur"></span>
         <button id="t-shorter" class="sq" data-i18n-title="tl.shorter.t">−</button><span id="t-dur" class="mono"></span><button id="t-longer" class="sq" data-i18n-title="tl.longer.t">+</button>
-        <button id="t-fit1"></button><button id="t-fit2"></button><button id="t-reset" data-i18n="tl.reset" data-i18n-title="tl.reset.t"></button></div>
+        <button id="t-fit1"></button><button id="t-fit2"></button><button id="t-reset" data-i18n="tl.reset" data-i18n-title="tl.reset.t"></button><span class="algo" data-i18n-title="tl.algo.t">WSOLA</span></div>
+      <div class="trow" data-i18n-title="tl.pauses.t"><span class="tl" data-i18n="tl.pauses"></span>
+        <select id="t-pcap"><option value="" data-i18n="tl.pcap.none"></option><option value="0.5">≤ 0,5 s</option><option value="0.3">≤ 0,3 s</option><option value="0.15">≤ 0,15 s</option></select>
+        <span id="t-pinfo" class="muted"></span></div>
       <div class="trow" id="t-imgrow" data-i18n-title="tl.img.t"><span class="tl" data-i18n="tl.img"></span>
         <span id="t-pos" class="mono"></span><button id="t-place"><span data-i18n="tl.place"></span><kbd>I</kbd></button><button id="t-follow" data-i18n="tl.follow" data-i18n-title="tl.follow.t"></button></div>
     </div>

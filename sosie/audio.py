@@ -237,6 +237,49 @@ def speech_bounds(y, sr, asr, head=0.10, tail=0.30):
     return [round(max(0.0, a), 3), round(min(dur, b), 3)]
 
 
+def find_pauses(y, sr, a, b, min_len=0.15):
+    """Silences inside the speech of a take, between a and b (s): [[start, end], …] where the level drops to the noise floor
+    for at least min_len seconds (breaths and clicks under 80 ms do not break a pause)."""
+    t, v = voiced(y, sr)
+    if not len(t):
+        return []
+    fr = 0.03
+    on = np.flatnonzero(v & (t >= a) & (t + fr <= b))
+    if len(on) < 2:
+        return []
+    out = []
+    for i, j in zip(on[:-1], on[1:]):
+        if j - i > 1:
+            s, e = t[i] + fr, t[j]
+            if e - s >= min_len:
+                out.append([round(float(s), 3), round(float(e), 3)])
+    return out
+
+
+def cut(y, sr, cuts, xf=0.01):
+    """y without the regions cuts [[start, end], …] (s), each join crossfaded over xf seconds."""
+    if not cuts:
+        return y
+    n = int(xf * sr)
+    parts, pos = [], 0
+    for cs, ce in sorted(cuts):
+        i, j = int(cs * sr), int(ce * sr)
+        if j <= i or i < pos:
+            continue
+        parts.append(y[pos:i])
+        pos = j
+    parts.append(y[pos:])
+    out = parts[0].astype(np.float64)
+    for p in parts[1:]:
+        p = p.astype(np.float64)
+        k = min(n, len(out), len(p))
+        if k:
+            r = np.linspace(0, 1, k)
+            out[-k:] = out[-k:] * (1 - r) + p[:k] * r
+        out = np.concatenate([out, p[k:]])
+    return out
+
+
 def peaks(y, n=400):
     k = max(1, len(y) // n)
     pk = np.abs(y[: len(y) // k * k]).reshape(-1, k).max(axis=1) if len(y) >= k else np.abs(y)

@@ -4,6 +4,12 @@
 const I18N = { lang: "fr" };
 I18N.fr = {
   "tab.studio": "Studio", "tab.voices": "Voix", "tab.synth": "Synthèse",
+  "tl.pauses": "Pauses", "tl.pauses.t": "Raccourcir les blancs à l'intérieur de la prise retenue (les mots restent calés)",
+  "tl.pcap.none": "intactes", "tl.pinfo": "{n} pauses · −{s} s · cliquez une pause (bande orange) sur la forme d'onde pour la retirer",
+  "tl.pcap.done": "Pauses limitées à {c} s : −{s} s", "tl.pcap.off": "Pauses intactes",
+  "tl.pause.t": "Pause de {s} s : cliquer pour la retirer (ou la remettre)", "tl.pause.cut": "Pause de {s} s retirée", "tl.pause.back": "Pause de {s} s remise",
+  "tk.wave.t": "Cliquer pour écouter ; les bandes orange sont les pauses (cliquer pour retirer)", "tk.cut.t": "Temps retiré dans les pauses",
+  "tl.algo.t": "Vitesse changée par WSOLA (atempo de ffmpeg), sans toucher à la hauteur : le même algorithme que la version anglaise. Jamais Rubber Band (métallique).",
   // pace, video placement, text editing, file picker
   "tl.pslow.t": "Débit plus lent (−5 mots/min)", "tl.pfast.t": "Débit plus rapide (+5 mots/min)", "tl.pace.val": "{w} mots/min",
   "tl.pace.t": "Débit de cette réplique pour la bande estimée. Projet : {p} mots/min ({how})",
@@ -29,7 +35,7 @@ I18N.fr = {
   "tl.gen": "Générer une prise", "tl.gen.t": "Prise de synthèse de cette réplique avec la voix choisie (S)",
   "tl.band": "Bande rythmo", "tl.band.t": "D'où la bande rythmo tire son rythme : ce qu'elle fait défiler, et quand",
   "tl.listen": "▶ Écouter",
-  "tl.dur": "Durée", "tl.dur.t": "Durée de la prise retenue dans la piste : accélérée ou ralentie sans changer la hauteur (WSOLA)",
+  "tl.dur": "Durée", "tl.dur.t": "Durée de la prise retenue dans la piste : accélérée ou ralentie sans changer la hauteur (WSOLA, comme la version anglaise)",
   "tl.shorter.t": "Raccourcir de 2 % (plus rapide)", "tl.longer.t": "Allonger de 2 % (plus lent)",
   "tl.reset": "×1", "tl.reset.t": "Revenir à la durée d'origine",
   "tl.fitslot": "= plan {s} s", "tl.fitsynth": "= synthèse {s} s", "tl.fitguide": "= synthèse importée {s} s",
@@ -181,7 +187,8 @@ I18N.fr = {
     <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Vitesse de défilement de la bande rythmo.</dd>`,
   "help.text": `<p><b>Prises.</b> Une réplique a des prises micro (🎙) et des prises de synthèse (✦, générées avec une voix de la bibliothèque). Une seule est retenue (★) : c'est elle qui part dans la piste.</p>
     <p><b>Bande rythmo.</b> Elle fait défiler les mots au rythme d'une source, au choix : la prise retenue (les mots et les temps entendus par Whisper), la prise de synthèse, la synthèse importée, la durée du plan dans la vidéo, ou un débit réglable (mots par minute, par réplique ou pour le projet ; par défaut mesuré sur vos prises micro). Dites chaque mot quand il passe la barre. Le pré-roll fait démarrer l'image un peu avant la voix.</p>
-    <p><b>Durée.</b> La prise retenue peut être raccourcie ou allongée dans la piste (−/+ par pas de 2 %), ou calée d'un clic sur la durée du plan ou de la synthèse, sans changer la hauteur de la voix. Au-delà de ±20 %, écoutez : la voix peut se dégrader.</p>
+    <p><b>Durée.</b> La prise retenue peut être raccourcie ou allongée dans la piste (−/+ par pas de 2 %), ou calée d'un clic sur la durée du plan ou de la synthèse, sans changer la hauteur de la voix (WSOLA, l'algorithme de la version anglaise ; jamais Rubber Band, métallique). Au-delà de ±20 %, écoutez : la voix peut se dégrader.</p>
+    <p><b>Pauses.</b> Les blancs à l'intérieur d'une prise sont repérés (bandes orange sur la forme d'onde). On peut les limiter toutes (≤ 0,5 / 0,3 / 0,15 s) ou en retirer une en cliquant dessus ; la partie retirée apparaît en rouge, les mots restent calés. Pauses et vitesse se combinent.</p>
     <p><b>Vidéo.</b> Projet ▸ « Choisir une vidéo ». Chaque réplique se place sur l'image : amenez la vidéo au bon endroit et « Placer ici » (I) ; « Placer la suite » enchaîne les répliques suivantes selon leur durée estimée. Un script importé en .srt arrive déjà placé.</p>
     <p><b>Texte.</b> ✎ Modifier (E), + Réplique, 🗑 sur la réplique courante ; Projet ▸ « Modifier le script » pour tout le texte d'un coup.</p>
     <p>Vous pouvez vous écarter du script : sous chaque prise s'affiche ce que vous avez dit, et c'est ce texte, mot à mot avec ses temps, qui part avec la prise.</p>
@@ -190,6 +197,12 @@ I18N.fr = {
 };
 I18N.en = {
   "tab.studio": "Studio", "tab.voices": "Voices", "tab.synth": "Synthesis",
+  "tl.pauses": "Pauses", "tl.pauses.t": "Shorten the silences inside the kept take (words stay in sync)",
+  "tl.pcap.none": "untouched", "tl.pinfo": "{n} pauses · −{s} s · click a pause (orange band) on the waveform to remove it",
+  "tl.pcap.done": "Pauses capped at {c} s: −{s} s", "tl.pcap.off": "Pauses untouched",
+  "tl.pause.t": "{s} s pause: click to remove it (or bring it back)", "tl.pause.cut": "{s} s pause removed", "tl.pause.back": "{s} s pause back",
+  "tk.wave.t": "Click to listen; orange bands are pauses (click to remove)", "tk.cut.t": "Time removed from pauses",
+  "tl.algo.t": "Speed changed by WSOLA (ffmpeg atempo), pitch untouched: the same algorithm as the English version. Never Rubber Band (metallic).",
   "tl.pslow.t": "Slower pace (−5 words/min)", "tl.pfast.t": "Faster pace (+5 words/min)", "tl.pace.val": "{w} words/min",
   "tl.pace.t": "Pace of this line for the estimated band. Project: {p} words/min ({how})",
   "tl.pace.reset": "↺", "tl.pace.reset.t": "Back to the project's pace", "tl.pace.all": "⇉ project", "tl.pace.all.t": "Apply this pace to the whole project",
@@ -358,7 +371,8 @@ I18N.en = {
     <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Scrolling speed of the rythmo band.</dd>`,
   "help.text": `<p><b>Takes.</b> A line has microphone takes (🎙) and synthetic takes (✦, generated with a library voice). One is kept (★): that one goes into the track.</p>
     <p><b>Rythmo band.</b> It scrolls the words at the pace of a source of your choice: the kept take (the words and timings Whisper heard), the synthetic take, the imported synthesis, the shot's duration in the video, or an adjustable pace (words per minute, per line or for the project; by default measured on your mic takes). Say each word as it crosses the bar. The pre-roll starts the picture a little before the voice.</p>
-    <p><b>Duration.</b> The kept take can be made shorter or longer in the track (−/+ in 2 % steps), or fitted in one click to the shot or the synthesis, pitch unchanged. Beyond ±20 %, listen: the voice may degrade.</p>
+    <p><b>Duration.</b> The kept take can be made shorter or longer in the track (−/+ in 2 % steps), or fitted in one click to the shot or the synthesis, pitch unchanged (WSOLA, the English version's algorithm; never Rubber Band, metallic). Beyond ±20 %, listen: the voice may degrade.</p>
+    <p><b>Pauses.</b> Silences inside a take are detected (orange bands on the waveform). Cap them all (≤ 0.5 / 0.3 / 0.15 s) or remove one by clicking it; the removed part shows in red, words stay in sync. Pauses and speed add up.</p>
     <p><b>Video.</b> Project ▸ "Choose a video". Each line is placed on the picture: bring the video to the right spot and "Place here" (I); "Place the rest" chains the following lines by their estimated duration. A script imported as .srt arrives already placed.</p>
     <p><b>Text.</b> ✎ Edit (E), + Line, 🗑 on the current line; Project ▸ "Edit the script" for the whole text at once.</p>
     <p>You can stray from the script: what you said shows under each take, and that text, word by word with its timings, goes with the take.</p>
